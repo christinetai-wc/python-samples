@@ -1,0 +1,101 @@
+category,template,options
+1.基礎描述句,This ___ is very important.,test|rule|decision|habit|lesson
+1.基礎描述句,This ___ is very expensive.,course|phone|trip|book|gift
+1.基礎描述句,This ___ is very useful.,skill|app|method|tool|website
+1.基礎描述句,This ___ is easy to understand.,story|question|rule|idea
+1.基礎描述句,This ___ is hard to explain.,problem|feeling|situation
+1.基礎描述句,The ___ is very popular.,song|app|place|activity
+1.基礎描述句,The ___ is good for children.,game|book|habit|food
+1.基礎描述句,The ___ is bad for your health.,drink|habit|lifestyle
+1.基礎描述句,The ___ is part of daily life.,internet|phone|homework
+1.基礎描述句,The ___ plays an important role.,teacher|family|habit|practice
+1.基礎描述句,The ___ is full of challenges.,life|exam|journey|process
+1.基礎描述句,The ___ is becoming more common.,online class|AI|social media
+1.基礎描述句,The ___ is different from before.,school|system|test
+1.基礎描述句,The ___ is one of the reasons.,stress|habit|choice
+1.基礎描述句,The ___ is a good example.,story|case|situation
+1.基礎描述句,The ___ is a serious problem.,pollution|stress|bullying
+1.基礎描述句,The ___ is worth trying.,method|activity|idea
+1.基礎描述句,The ___ is easy to forget.,rule|name|word
+1.基礎描述句,The ___ is not enough.,time|money|practice
+1.基礎描述句,The ___ is not always true.,idea|rule|answer
+2.比較句型,This ___ is better than that ___.,method|idea|choice
+2.比較句型,This ___ is worse than before.,result|situation|condition
+2.比較句型,This ___ is more important than ___.,health|time|money
+2.比較句型,This ___ is less interesting than ___.,book|movie|class
+2.比較句型,This ___ is more difficult than expected.,test|task|question
+2.比較句型,This ___ is easier to understand.,example|explanation
+2.比較句型,This ___ is not as good as ___.,plan|result|idea
+2.比較句型,This ___ costs more than ___.,course|phone|trip
+2.比較句型,This ___ takes less time.,method|way|process
+2.比較句型,This ___ works better for children.,activity|app|style
+2.比較句型,This ___ is more common today.,problem|habit|trend
+2.比較句型,This ___ is growing faster.,industry|technology|problem
+2.比較句型,This ___ is becoming less popular.,game|platform|habit
+2.比較句型,This ___ has a bigger impact.,decision|habit|event
+2.比較句型,This ___ makes a bigger difference.,choice|change|effort
+3.因果句型,This ___ is important because ___.,rule|habit|decision
+3.因果句型,This ___ happens because ___.,problem|change|result
+3.因果句型,This ___ is caused by ___.,stress|pollution|mistake
+3.因果句型,This ___ leads to ___.,habit|choice|action
+3.因果句型,This ___ results in ___.,practice|effort|change
+3.因果句型,This ___ is the reason why ___.,failure|success|problem
+3.因果句型,This ___ helps people ___.,tool|habit|method
+3.因果句型,This ___ makes it easier to ___.,app|system|rule
+3.因果句型,This ___ makes it harder to ___.,noise|stress|pressure
+3.因果句型,This ___ allows people to ___.,internet|phone|platform
+3.因果句型,This ___ prevents people from ___.,rule|system|fear
+3.因果句型,This ___ encourages children to ___.,game|teacher|activity
+3.因果句型,This ___ helps students understand ___.,example|story|picture
+3.因果句型,This ___ depends on ___.,result|success|choice
+3.因果句型,This ___ changes the way people ___.,technology|education
+3.因果句型,This ___ affects our daily life.,internet|habit|rule
+3.因果句型,This ___ makes a difference.,choice|effort|habit
+3.因果句型,This ___ plays a key role in ___.,education|growth|success
+3.因果句型,This ___ is related to ___.,problem|habit|result
+3.因果句型,This ___ is important for the future.,skill|decision|education
+4.觀點與判斷句,Many people think that ___.,school|homework|phones
+4.觀點與判斷句,Some people believe that ___.,success|education|money
+4.觀點與判斷句,It is important to ___.,learn|practice|choose
+4.觀點與判斷句,It is necessary to ___.,rest|plan|prepare
+4.觀點與判斷句,It is difficult to ___.,decide|explain|change
+4.觀點與判斷句,It is common for students to ___.,feel stressed|make mistakes
+4.觀點與判斷句,It is not easy to ___.,solve problems|stay focused
+4.觀點與判斷句,It is a good idea to ___.,practice|plan ahead
+4.觀點與判斷句,It is a mistake to ___.,give up|ignore rules
+4.觀點與判斷句,It is possible to ___.,improve|change|learn
+4.觀點與判斷句,It is important for children to ___.,read|think|try
+4.觀點與判斷句,It is normal to ___.,feel nervous|fail sometimes
+4.觀點與判斷句,It is better to ___.,ask for help|try again
+4.觀點與判斷句,It is wrong to ___.,cheat|lie|hurt others
+4.觀點與判斷句,It is easy for people to ___.,forget|get distracted
+4.觀點與判斷句,It is hard for students to ___.,manage time|stay focused
+4.觀點與判斷句,It is useful to ___.,take notes|review
+4.觀點與判斷句,It is helpful for learning to ___.,practice|discuss
+4.觀點與判斷句,It is important not to ___.,give up|rush
+4.觀點與判斷句,It is okay to ___.,make mistakes|try again
+5.考試與閱讀,The passage mainly talks about ___.,education|technology|habits
+5.考試與閱讀,The main idea of the passage is ___.,main point|summary|purpose
+5.考試與閱讀,According to the passage ___.,the fact|the story|the result
+5.考試與閱讀,From the passage we know that ___.,the truth|the reason|the idea
+5.考試與閱讀,The writer thinks that ___.,opinion|feeling|idea
+5.考試與閱讀,The writer wants to tell us ___.,lesson|story|message
+5.考試與閱讀,The purpose of the passage is to ___.,explain|inform|persuade
+5.考試與閱讀,The passage gives an example of ___.,habit|problem|rule
+5.考試與閱讀,The problem mentioned in the passage is ___.,pollution|stress|bullying
+5.考試與閱讀,One possible reason is ___.,habit|stress|mistake
+5.考試與閱讀,The best title for this passage is ___.,title|name|topic
+5.考試與閱讀,The word ___ means ___.,important|useful|common
+5.考試與閱讀,The sentence shows that ___.,meaning|result|reason
+5.考試與閱讀,This paragraph explains ___.,detail|reason|process
+5.考試與閱讀,The last paragraph suggests that ___.,future|result|advice
+5.考試與閱讀,The passage shows the importance of ___.,habit|skill|practice
+5.考試與閱讀,The passage describes how ___.,to learn|to live|to work
+5.考試與閱讀,The passage compares ___ and ___.,school|home|work
+5.考試與閱讀,The passage explains why ___.,reason|result|fact
+5.考試與閱讀,The passage focuses on ___.,topic|detail|problem
+5.考試與閱讀,The example is used to show ___.,reason|point|truth
+5.考試與閱讀,The passage encourages readers to ___.,try|learn|practice
+5.考試與閱讀,The passage warns people about ___.,danger|problem|mistake
+5.考試與閱讀,The passage tells a story about ___.,life|hero|friend
+5.考試與閱讀,The passage gives advice on ___.,learning|health|life
