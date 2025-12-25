@@ -11,7 +11,7 @@ import google.genai as genai
 # 設定環境
 BASE_DIR = Path(__file__).resolve().parent
 # 注意：在正式環境中，建議使用環境變數管理 API KEY
-GOOGLE_API_KEY = "AIzaSyDSVBwYenSzLCRCkKWv97pPqdr49wqhDfk"
+GOOGLE_API_KEY = "Your GEMINI KEY"
 
 # 設定外觀與主題
 ctk.set_appearance_mode("System")  # 跟隨系統模式
