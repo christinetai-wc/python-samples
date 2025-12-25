@@ -1,2 +1,2 @@
-# vocab-tools
-Tools for vocabulary
+# python sample code 
+sample codes for python
