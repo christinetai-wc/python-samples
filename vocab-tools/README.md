@@ -12,7 +12,9 @@ python vocab_input.py
 ```
 
 檔案格式
+
 vocab_list.csv
+
 欄位：單字、中文意思、例句、分類、科目、上課日期
 
 ### 2. `vocab_flashcard.py`
@@ -20,7 +22,6 @@ vocab_list.csv
 功能：從 vocab_list.csv 讀取單字，列出分類、科目及上課日期，可切換練習模式（有語音）與考試模式。
 
 使用方式：
-
 ```bash
 python vocab_flashcard.py
 ```
@@ -35,11 +36,15 @@ python sentence_flow.py
 ```
 
 檔案格式
+
 sentence.csv
+
 欄位：category, template, options
 
 範例：
+
 category,template,options
+
 基礎描述句,This ___ is very important.,test|rule|decision|habit|lesson
 
 注意事項
