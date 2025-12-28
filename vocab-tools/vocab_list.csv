@@ -1,0 +1,72 @@
+﻿Course,Date,Word,POS,Chinese_1,Chinese_2,Example,Total_Count,Correct_Count
+math,2025-11-19,annual,形容詞,每年的,一年一度的,The company holds an annual meeting in January.,1,0
+math,2025-12-12,Income,名詞,收入,所得,Her monthly income is quite stable.,1,1
+math,2025-12-03,Two to five,數詞,二比五,二與五之比,The team won by a score of two to five.,1,0
+math,2025-11-19,left,動詞,遺留下,剩下,The flood left a thick layer of mud on the streets.,1,1
+math,2025-12-12,Giving,名詞,貢獻,贈予,The spirit of giving is strong during the holidays.,1,1
+math,2025-12-12,Balance,名詞,平衡,均衡,She struggled to maintain her balance on the tightrope.,1,1
+math,2025-12-12,Social,形容詞,社會的,交際的,We need to address these social issues.,1,0
+math,2025-12-03,Ratio,名詞,比例,比率,What is the ratio of men to women in the class?,1,0
+math,2025-12-03,Circumference,名詞,圓周,周長,We measured the circumference of the tree trunk.,1,0
+math,2025-12-12,Expend,動詞,支出,耗費,We had to expend a lot of energy to finish the project.,1,0
+math,2025-12-12,Organize,動詞,策劃,組織,We need to organize a meeting for next week.,0,0
+math,2025-12-12,Expect,動詞,預期,期望,I expect him to arrive by noon.,0,0
+math,2025-12-03,Data analysis,名詞,數據分析,資料分析,Data analysis is crucial for making informed decisions.,0,0
+math,2025-11-19,owner,名詞,物主,所有人,The owner of the car reported it stolen.,0,0
+math,2025-12-12,Profit,名詞,利潤,收益,The company made a significant profit this quarter.,0,0
+math,2025-12-03,Customer,名詞,顧客,客戶,The store manager always greets every customer.,0,0
+math,2025-12-03,Explain,動詞,解釋,說明,Can you explain this concept to me?,0,0
+math,2025-12-12,Supply,動詞,供應,提供,We need to supply more materials to the construction site.,0,0
+math,2025-11-19,equally,副詞,平等地,相同地,All students should be treated equally.,0,0
+math,2025-12-12,Spending,名詞,花銷,開支,His daily spending is quite high.,0,0
+math,2025-11-19,account,名詞,帳目,帳戶,She checked her bank account online.,0,0
+math,2025-12-12,Charity,名詞,慈善機構,慈善,She donates a lot of money to various charities.,0,0
+math,2025-11-19,rest,名詞,剩餘部分,休息,The rest of the team will arrive tomorrow.,0,0
+math,2025-12-03,Discount,名詞,折扣,優惠,I got a 10% discount on my new shoes.,0,0
+math,2025-12-03,Energy,名詞,體力，精力,能量，能源,I need more energy to finish this project.,0,0
+math,2025-12-03,Man-made,形容詞,人造的,人為的，人工的,"This lake is man-made, not natural.",0,0
+math,2025-12-03,Electricity,名詞,電力,電,Many homes use electricity for heating.,0,0
+math,2025-12-03,Whatever,代名詞,任何事物,無論什麼,You can choose whatever book you like.,0,0
+math,2025-12-03,Wavy,形容詞,波浪狀的,起伏的，波紋的,She has beautiful wavy hair.,0,0
+math,2025-12-03,Beam,名詞,光束,橫樑，棟樑,A powerful beam of light shone from the lighthouse.,0,0
+math,2025-12-03,Through,介係詞,穿過，經過,透過，憑藉,The train passed through the tunnel.,0,0
+math,2025-12-03,Appear,動詞,出現,顯露，似乎,A bright star appeared in the night sky.,0,0
+Eng,2025-12-09,Reflected,動詞,反映,倒映,The still water reflected the surrounding trees.,0,0
+Eng,2025-12-09,Absorbs,動詞,吸收,攝取,A sponge absorbs water very well.,0,0
+Eng,2025-12-09,Except,介詞,除了,不包括,Everyone went to the party except for John.,0,0
+Eng,2025-12-09,Bounces,動詞,彈跳,反彈,The ball bounces high off the ground.,0,0
+Eng,2025-12-09,Entire,形容詞,全部的,完整的,We spent the entire day cleaning the house.,0,0
+Eng,2025-12-09,Shiny,形容詞,閃亮的,光亮的,"The cat has soft, shiny fur.",0,0
+Eng,2025-12-09,Spread,動詞,傳播,擴散,The news of the discovery spread quickly.,0,0
+Eng,2025-12-27,satisfaction,名詞,滿意,滿足,Customer satisfaction is very important.,0,0
+Eng,2025-12-27,decided,動詞,決定,下定,He decided to go to the meeting.,0,0
+Eng,2025-12-27,gave,動詞,給予,接受,She gave him a gift.,0,0
+Eng,2025-12-27,received,動詞,收到,接收,He received a letter yesterday.,0,0
+Eng,2025-12-27,Rapid,形容詞,迅速的,快速的,The rapid growth surprised everyone.,0,0
+Eng,2025-12-27,Consequently,副詞,最後,因此, the project was delayed.,0,0
+Eng,2025-12-27,Experience,名詞,經驗,體驗,She has a lot of teaching experience.,0,0
+Eng,2025-12-27,Frequent,形容詞,頻繁,常見的,He is a frequent visitor to the library.,0,0
+Eng,2025-12-27,Flooding,名詞,洪水,淹水,Flooding caused damage to many houses.,0,0
+Eng,2025-12-27,Employees,名詞,員工,職員,The employees worked hard this year.,0,0
+Eng,2025-12-27,Employer,名詞,老闆,僱主,The employer hired new staff.,0,0
+Eng,2025-12-27,Responded,動詞,已回覆,答覆,He responded to the email quickly.,0,0
+Eng,2025-12-27,Satisfaction,名詞,滿意,滿足,Customer satisfaction is our priority.,0,0
+math,2025-12-18,Digit,名詞,數字,位數,"In 1432, the digit 1 is in the thousands place.",0,0
+math,2025-12-18,Stand,動詞,代表,象徵,"In 6893, the digit 8 stands for 800.",0,0
+math,2025-12-18,Value,名詞,數值,價值,The value of 1 plus 1 equals 2.,0,0
+math,2025-12-18,Volume,名詞,容量,體積,The volume of water in the toilet is 4L.,0,0
+math,2025-12-18,Beaker,名詞,燒杯,容器,The scientist needs beakers to do the experiment.,0,0
+math,2025-12-18,Least,形容詞,最少,最小,I need the least amount of time to finish my homework.,0,0
+math,2025-12-18,Complete,動詞,完成,填寫,I completed my homework.,0,0
+math,2025-12-18,Arrange,動詞,安排,整理,I arranged my trip plan.,0,0
+math,2025-12-18,Increasing,形容詞,增加的,增長的,The population is increasing every year.,0,0
+math,2025-12-18,Pattern,名詞,規律,圖案,I can’t find the number pattern.,0,0
+math,2025-12-18,Perimeter,名詞,周長,周圍,The perimeter of a circle is its diameter multiplied by pi.,0,0
+math,2025-12-18,Exercising,名詞,運動,鍛鍊,Daily exercising is essential for good health.,0,0
+math,2025-12-18,Acute,形容詞,銳,尖銳,Acute angles are less than 90 degrees.,0,0
+math,2025-12-18,Obtuse,形容詞,鈍,遲鈍,Obtuse angles are greater than 90 degrees.,0,0
+math,2025-12-23,Product,名詞,產品,積,The product of 10 and 10 is 100.,0,0
+math,2025-12-23,Metal,名詞,金屬,合金,The metal is always hard.,0,0
+math,2025-12-23,Wire,名詞,金屬絲,電線,I need some wire to fix this lamp.,0,0
+math,2025-12-23,Bent,形容詞,彎曲的,弄彎的,The fork was bent out of shape.,0,0
+math,2025-12-23,Previous,形容詞,先前的,以前的,We discussed this in our previous meeting.,0,0

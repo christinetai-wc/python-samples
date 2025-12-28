@@ -130,7 +130,7 @@ class FlashcardApp:
     def save_vocab_data(self):
         filename = "vocab_list.csv"
         all_rows = []
-        fieldnames = ['Word', 'POS', 'Chinese_1', 'Chinese_2', 'Example', 'Course', 'Date', 'Total_Count', 'Correct_Count']
+        fieldnames = ['Course', 'Date', 'Word', 'POS', 'Chinese_1', 'Chinese_2', 'Example', 'Total_Count', 'Correct_Count']
         for course in self.all_data.values():
             all_rows.extend(course)
         try:
