@@ -67,31 +67,50 @@ def load_data(file_path):
     except:
         return pd.DataFrame()
 
-# 計算實際投入金額
+# 計算實際投入金額（僅股票成本，不含保證金）
 def calculate_actual_investment(df_stock, category, stock_code=None):
-    if df_stock.empty:
-        return 0
-    
-    if category == '進攻型' and stock_code:
-        filtered = df_stock[(df_stock['所屬分類'] == '進攻型') & 
-                           (df_stock['股票代碼'] == stock_code) & 
-                           (df_stock['交易類型'] == '買進')]
-    else:
-        filtered = df_stock[(df_stock['所屬分類'] == category) & (df_stock['交易類型'] == '買進')]
-    
-    if filtered.empty:
-        return 0
-    
-    # 計算總成本 = 交易金額 + 手續費
     total = 0
-    for _, row in filtered.iterrows():
-        shares = abs(row['股數'])
-        price = row['成交價格(USD)']
-        trade_amt = shares * price
-        fee = row['手續費(USD)'] if pd.notna(row['手續費(USD)']) and row['手續費(USD)'] > 0 else trade_amt * 0.001425
-        total += trade_amt + fee
-    
+
+    # 計算股票買入成本
+    if not df_stock.empty:
+        if category == '進攻型' and stock_code:
+            filtered = df_stock[(df_stock['所屬分類'] == '進攻型') &
+                               (df_stock['股票代碼'] == stock_code) &
+                               (df_stock['交易類型'] == '買進')]
+        else:
+            filtered = df_stock[(df_stock['所屬分類'] == category) & (df_stock['交易類型'] == '買進')]
+
+        if not filtered.empty:
+            # 計算總成本 = 交易金額 + 手續費
+            for _, row in filtered.iterrows():
+                shares = abs(row['股數'])
+                price = row['成交價格(USD)']
+                trade_amt = shares * price
+                fee = row['手續費(USD)'] if pd.notna(row['手續費(USD)']) and row['手續費(USD)'] > 0 else trade_amt * 0.001425
+                total += trade_amt + fee
+
     return total
+
+# 計算選擇權被壓住的保證金（資金來源對應到特定股票的未到期賣方部位）
+def calculate_option_margin(df_option, stock_code):
+    if df_option is None or df_option.empty:
+        return 0
+    if '保證金(USD)' not in df_option.columns or '資金來源' not in df_option.columns:
+        return 0
+
+    df_opt_calc = df_option.copy()
+    df_opt_calc['到期日'] = pd.to_datetime(df_opt_calc['到期日'])
+    df_opt_calc['資金來源'] = df_opt_calc['資金來源'].fillna('').astype(str)
+    today = pd.Timestamp(datetime.now().date())
+    # 篩選: 資金來源為此股票、未到期、賣方部位
+    active_margin = df_opt_calc[
+        (df_opt_calc['資金來源'].str.upper() == stock_code.upper()) &
+        (df_opt_calc['到期日'] >= today) &
+        (df_opt_calc['買賣方向'] == '賣出')
+    ]
+    if not active_margin.empty:
+        return active_margin['保證金(USD)'].sum()
+    return 0
 
 # 取得股票現價
 @st.cache_data(ttl=300)  # 快取5分鐘
@@ -269,6 +288,12 @@ page = st.sidebar.selectbox("選擇功能",
 # ==================== 投資總覽 ====================
 if page == "📊 投資總覽":
     st.header("投資資金配置總覽")
+
+    # 重新查詢現價按鈕
+    if st.button("🔄 重新查詢現價"):
+        st.cache_data.clear()
+        st.rerun()
+
     df_plan = load_data(PLAN_FILE)
     df_stock = load_data(STOCK_FILE)
     df_option = load_data(OPTION_FILE)
@@ -333,18 +358,21 @@ if page == "📊 投資總覽":
                     for _, stock_row in df_allocation.iterrows():
                         stock_code = stock_row['股票代碼']
                         weight = float(stock_row['比重'])
-                        
+
                         # 預計金額 = 進攻型總額 × 比重
                         stock_planned = planned * (weight / 100)
-                        
-                        # 實際金額從交易記錄計算
+
+                        # 實際金額從交易記錄計算（僅股票成本）
                         stock_actual = calculate_actual_investment(df_stock, '進攻型', stock_code)
-                        
+                        # 選擇權保證金（資金來源為此股票）
+                        stock_margin = calculate_option_margin(df_option, stock_code)
+
                         chart_data.append({
                             'name': stock_code,
                             'type': '進攻型',
                             'planned': stock_planned,
-                            'actual': stock_actual
+                            'actual': stock_actual,
+                            'margin': stock_margin
                         })
             else:
                 # 保守型和樂透型直接計算
@@ -353,7 +381,8 @@ if page == "📊 投資總覽":
                     'name': inv_type,
                     'type': inv_type,
                     'planned': planned,
-                    'actual': actual
+                    'actual': actual,
+                    'margin': 0
                 })
 
     # 顯示長條圖
@@ -419,6 +448,9 @@ if page == "📊 投資總覽":
             else:
                 market_hover_texts.append(f"<b>{stock_code}</b><br>無持股")
 
+        # 取得保證金數據
+        margin_values = [d.get('margin', 0) for d in chart_data]
+
         # 使用 Plotly 建立圖表
         fig = go.Figure()
 
@@ -431,20 +463,36 @@ if page == "📊 投資總覽":
             text=[f'${int(v):,}' if v > 0 else '' for v in planned_values],
             textposition='outside',
             textangle=-45,
-            hovertemplate='<b>%{x}</b><br>預計投入: $%{y:,.0f}<extra></extra>'
+            hovertemplate='<b>%{x}</b><br>預計投入: $%{y:,.0f}<extra></extra>',
+            offsetgroup='planned'
         ))
 
-        # 實際買入
+        # 實際買入（股票成本）- 與保證金堆疊
         fig.add_trace(go.Bar(
             name='實際買入',
             x=categories,
             y=actual_values,
             marker_color='#3b82f6',
             text=[f'${int(v):,}' if v > 0 else '' for v in actual_values],
+            textposition='inside',
+            textangle=0,
+            hovertemplate='%{customdata}<extra></extra>',
+            customdata=actual_hover_texts,
+            offsetgroup='actual'
+        ))
+
+        # 選擇權保證金（堆疊在實際買入上方）
+        fig.add_trace(go.Bar(
+            name='選擇權保證金',
+            x=categories,
+            y=margin_values,
+            marker_color='#f59e0b',
+            text=[f'${int(v):,}' if v > 0 else '' for v in margin_values],
             textposition='outside',
             textangle=-45,
-            hovertemplate='%{customdata}<extra></extra>',
-            customdata=actual_hover_texts
+            hovertemplate='<b>%{x}</b><br>選擇權保證金: $%{y:,.0f}<extra></extra>',
+            offsetgroup='actual',
+            base=actual_values
         ))
 
         # 目前市值
@@ -457,7 +505,8 @@ if page == "📊 投資總覽":
             textposition='outside',
             textangle=-45,
             hovertemplate='%{customdata}<extra></extra>',
-            customdata=market_hover_texts
+            customdata=market_hover_texts,
+            offsetgroup='market'
         ))
 
         # 在進攻型股票的預計投入長條上加入安全邊際標記
