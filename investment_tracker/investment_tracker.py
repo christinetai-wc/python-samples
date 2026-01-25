@@ -3,6 +3,8 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
 import os
+import io
+import zipfile
 
 # 嘗試導入 yfinance
 try:
@@ -10,7 +12,6 @@ try:
     YFINANCE_AVAILABLE = True
 except ImportError:
     YFINANCE_AVAILABLE = False
-    st.warning("⚠️ 未安裝 yfinance，無法查詢即時股價。請執行: pip install yfinance")
 
 # 嘗試導入 fear_and_greed
 try:
@@ -19,31 +20,125 @@ try:
 except ImportError:
     FEAR_GREED_AVAILABLE = False
 
+
 st.set_page_config(page_title="投資理財追蹤系統", layout="wide")
 st.title("💰 投資理財資金分配追蹤系統 (USD)")
 
-# 檔案路徑
-PLAN_FILE = 'investment_plan.csv'
-ALLOCATION_FILE = 'aggressive_allocation.csv'
-STOCK_FILE = 'stock_transactions.csv'
-OPTION_FILE = 'options_transactions.csv'
+# 檔案名稱對應
+FILE_MAPPING = {
+    'investment_plan.csv': 'df_plan',
+    'aggressive_allocation.csv': 'df_allocation',
+    'conservative_allocation.csv': 'df_conservative',
+    'lottery_allocation.csv': 'df_lottery',
+    'stock_transactions.csv': 'df_stock',
+    'options_transactions.csv': 'df_option'
+}
 USD_RATE = 31.5
 
-# 初始化CSV檔案
-def init_csv_files():
-    if not os.path.exists(PLAN_FILE):
-        pd.DataFrame(columns=['時間', '投資類型', '預計投入(USD)', '匯率']).to_csv(PLAN_FILE, index=False, encoding='utf-8-sig')
-    if not os.path.exists(ALLOCATION_FILE):
-        pd.DataFrame(columns=['股票代碼', '比重', '公允值(USD)', '邊際1(%)', '邊際2(%)', '邊際3(%)', '邊際4(%)', '邊際5(%)']).to_csv(ALLOCATION_FILE, index=False, encoding='utf-8-sig')
-    if not os.path.exists(STOCK_FILE):
-        pd.DataFrame(columns=['交易日期', '交易類型', '所屬分類', '股票代碼', '股數', '成交價格(USD)', 
-                              '手續費(USD)', '交易稅(USD)', '用途說明', '備註']).to_csv(STOCK_FILE, index=False, encoding='utf-8-sig')
-    if not os.path.exists(OPTION_FILE):
-        pd.DataFrame(columns=['交易日期', '商品類型', '標的', '履約價', '到期日', '買賣權', '口數', 
-                              '權利金', '交易金額(USD)', '手續費(USD)', '總成本(USD)', 
-                              '資金來源', '策略說明']).to_csv(OPTION_FILE, index=False, encoding='utf-8-sig')
+# 初始化 session_state
+def init_session_state():
+    if 'df_plan' not in st.session_state:
+        st.session_state.df_plan = pd.DataFrame(columns=['時間', '投資類型', '預計投入(USD)', '匯率'])
+    if 'df_allocation' not in st.session_state:
+        st.session_state.df_allocation = pd.DataFrame(columns=['股票代碼', '比重', '公允值(USD)', '邊際1(%)', '邊際2(%)', '邊際3(%)', '邊際4(%)', '邊際5(%)'])
+    if 'df_conservative' not in st.session_state:
+        st.session_state.df_conservative = pd.DataFrame({
+            '股票代碼': ['VOO'],
+            '比重': [100.0],
+            '說明': ['S&P 500 ETF']
+        })
+    if 'df_lottery' not in st.session_state:
+        st.session_state.df_lottery = pd.DataFrame({
+            '股票代碼': ['BTC'],
+            '比重': [100.0],
+            '說明': ['比特幣']
+        })
+    if 'df_stock' not in st.session_state:
+        st.session_state.df_stock = pd.DataFrame(columns=['交易日期', '交易類型', '所屬分類', '股票代碼', '股數', '成交價格(USD)', '手續費(USD)', '交易稅(USD)', '用途說明', '備註'])
+    if 'df_option' not in st.session_state:
+        st.session_state.df_option = pd.DataFrame(columns=['交易日期', '商品類型', '標的', '履約價', '到期日', '買賣權', '買賣方向', '口數', '權利金', '交易金額(USD)', '手續費(USD)', '保證金(USD)', '總成本(USD)', '資金來源', '策略說明'])
+    if 'data_folder' not in st.session_state:
+        # 預設為程式所在的資料夾
+        st.session_state.data_folder = os.path.dirname(os.path.abspath(__file__))
+    if 'data_loaded' not in st.session_state:
+        st.session_state.data_loaded = False
 
-init_csv_files()
+init_session_state()
+
+# 從資料夾載入 CSV 檔案（本地模式）
+def load_from_folder(folder_path):
+    if not os.path.isdir(folder_path):
+        return False, "資料夾不存在"
+
+    loaded_files = []
+    for filename, state_key in FILE_MAPPING.items():
+        file_path = os.path.join(folder_path, filename)
+        if os.path.exists(file_path):
+            try:
+                df = pd.read_csv(file_path, encoding='utf-8-sig')
+                st.session_state[state_key] = df
+                loaded_files.append(filename)
+            except Exception as e:
+                pass
+
+    if loaded_files:
+        st.session_state.data_loaded = True
+        return True, f"已載入: {', '.join(loaded_files)}"
+    return False, "找不到任何 CSV 檔案"
+
+# 從上傳的檔案載入（雲端模式）
+def load_from_uploaded_files(uploaded_files):
+    loaded_files = []
+    for uploaded_file in uploaded_files:
+        filename = uploaded_file.name
+
+        # 處理 ZIP 檔案
+        if filename.endswith('.zip'):
+            with zipfile.ZipFile(uploaded_file, 'r') as zip_ref:
+                for zip_filename in zip_ref.namelist():
+                    if zip_filename in FILE_MAPPING:
+                        with zip_ref.open(zip_filename) as f:
+                            df = pd.read_csv(f, encoding='utf-8-sig')
+                            st.session_state[FILE_MAPPING[zip_filename]] = df
+                            loaded_files.append(zip_filename)
+        # 處理 CSV 檔案
+        elif filename in FILE_MAPPING:
+            df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
+            st.session_state[FILE_MAPPING[filename]] = df
+            loaded_files.append(filename)
+
+    if loaded_files:
+        st.session_state.data_loaded = True
+        return True, f"已載入: {', '.join(loaded_files)}"
+    return False, "找不到符合的 CSV 檔案"
+
+# 匯出所有資料為 ZIP
+def export_all_to_zip():
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for filename, state_key in FILE_MAPPING.items():
+            if state_key in st.session_state and not st.session_state[state_key].empty:
+                csv_buffer = io.StringIO()
+                st.session_state[state_key].to_csv(csv_buffer, index=False, encoding='utf-8-sig')
+                zip_file.writestr(filename, csv_buffer.getvalue().encode('utf-8-sig'))
+    zip_buffer.seek(0)
+    return zip_buffer
+
+# 儲存到本地資料夾
+def save_to_folder(folder_path):
+    if not os.path.isdir(folder_path):
+        return False, "資料夾不存在"
+
+    saved_files = []
+    for filename, state_key in FILE_MAPPING.items():
+        if state_key in st.session_state and not st.session_state[state_key].empty:
+            file_path = os.path.join(folder_path, filename)
+            st.session_state[state_key].to_csv(file_path, index=False, encoding='utf-8-sig')
+            saved_files.append(filename)
+
+    if saved_files:
+        return True, f"已儲存: {', '.join(saved_files)}"
+    return False, "沒有資料可儲存"
 
 # 取得恐懼貪婪指數
 def get_fear_greed_index():
@@ -60,21 +155,15 @@ def get_fear_greed_index():
     except:
         return None
 
-# 讀取CSV
-def load_data(file_path):
-    try:
-        return pd.read_csv(file_path, encoding='utf-8-sig')
-    except:
-        return pd.DataFrame()
-
 # 計算實際投入金額（僅股票成本，不含保證金）
 def calculate_actual_investment(df_stock, category, stock_code=None):
     total = 0
 
     # 計算股票買入成本
     if not df_stock.empty:
-        if category == '進攻型' and stock_code:
-            filtered = df_stock[(df_stock['所屬分類'] == '進攻型') &
+        if stock_code:
+            # 有指定股票代碼時，篩選該分類下的特定股票
+            filtered = df_stock[(df_stock['所屬分類'] == category) &
                                (df_stock['股票代碼'] == stock_code) &
                                (df_stock['交易類型'] == '買進')]
         else:
@@ -92,11 +181,11 @@ def calculate_actual_investment(df_stock, category, stock_code=None):
     return total
 
 # 計算選擇權被壓住的保證金（資金來源對應到特定股票的未到期賣方部位）
-def calculate_option_margin(df_option, stock_code):
+def calculate_option_margin(df_option, stock_code, return_details=False):
     if df_option is None or df_option.empty:
-        return 0
+        return (0, []) if return_details else 0
     if '保證金(USD)' not in df_option.columns or '資金來源' not in df_option.columns:
-        return 0
+        return (0, []) if return_details else 0
 
     df_opt_calc = df_option.copy()
     df_opt_calc['到期日'] = pd.to_datetime(df_opt_calc['到期日'])
@@ -109,8 +198,19 @@ def calculate_option_margin(df_option, stock_code):
         (df_opt_calc['買賣方向'] == '賣出')
     ]
     if not active_margin.empty:
-        return active_margin['保證金(USD)'].sum()
-    return 0
+        total = active_margin['保證金(USD)'].sum()
+        if return_details:
+            # 取得標的股票清單和對應保證金
+            details = []
+            if '標的' in active_margin.columns:
+                for _, row in active_margin.iterrows():
+                    details.append({
+                        'ticker': row['標的'],
+                        'margin': row['保證金(USD)']
+                    })
+            return (total, details)
+        return total
+    return (0, []) if return_details else 0
 
 # 取得股票現價
 @st.cache_data(ttl=300)  # 快取5分鐘
@@ -125,10 +225,33 @@ def get_current_price(ticker):
         yf_ticker = crypto_map.get(ticker.upper(), ticker)
 
         stock = yf.Ticker(yf_ticker)
-        info = stock.info
-        # 優先使用 currentPrice，如果沒有則用 regularMarketPrice
-        price = info.get('currentPrice') or info.get('regularMarketPrice')
-        return float(price) if price else None
+
+        # 方法1: 使用 fast_info (較不容易被限速)
+        try:
+            price = stock.fast_info.get('lastPrice') or stock.fast_info.get('previousClose')
+            if price:
+                return float(price)
+        except:
+            pass
+
+        # 方法2: 使用 history 取得最近收盤價
+        try:
+            hist = stock.history(period='1d')
+            if not hist.empty:
+                return float(hist['Close'].iloc[-1])
+        except:
+            pass
+
+        # 方法3: 使用 info (可能被限速)
+        try:
+            info = stock.info
+            price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('previousClose')
+            if price:
+                return float(price)
+        except:
+            pass
+
+        return None
     except:
         return None
 
@@ -138,8 +261,9 @@ def calculate_holdings(df_stock, category, stock_code=None):
     if df_stock.empty:
         return {}
 
-    if category == '進攻型' and stock_code:
-        filtered = df_stock[(df_stock['所屬分類'] == '進攻型') &
+    if stock_code:
+        # 有指定股票代碼時，篩選該分類下的特定股票
+        filtered = df_stock[(df_stock['所屬分類'] == category) &
                            (df_stock['股票代碼'] == stock_code)]
     else:
         filtered = df_stock[df_stock['所屬分類'] == category]
@@ -282,56 +406,143 @@ def get_planned_amount(df_plan, df_allocation, category, stock_code=None):
         return float(filtered['預計投入(USD)'].sum()) if not filtered.empty else 0
 
 # 側邊欄選單
-page = st.sidebar.selectbox("選擇功能", 
+page = st.sidebar.radio("選擇功能",
     ["📊 投資總覽", "💵 投資計畫管理", "📈 股票交易記錄", "🎯 選擇權交易記錄", "📉 數據分析"])
+
+# 側邊欄 - 資料載入/匯出
+st.sidebar.divider()
+st.sidebar.subheader("📁 資料管理")
+
+# 本地模式：輸入資料夾路徑
+folder_path = st.sidebar.text_input("本地資料夾路徑", value=st.session_state.data_folder,
+    help="輸入包含 CSV 檔案的資料夾路徑")
+st.sidebar.caption("💡 編輯表格後請先點頁面內的「儲存」按鈕，再點此處「儲存」到檔案")
+
+col1, col2 = st.sidebar.columns(2)
+with col1:
+    if st.button("📂 載入", use_container_width=True, key="sidebar_load_btn"):
+        if folder_path:
+            success, msg = load_from_folder(folder_path)
+            if success:
+                st.session_state.data_folder = folder_path
+                st.sidebar.success(msg)
+                st.rerun()
+            else:
+                st.sidebar.error(msg)
+        else:
+            st.sidebar.warning("請輸入資料夾路徑")
+
+with col2:
+    if st.button("💾 儲存", use_container_width=True, key="sidebar_save_btn"):
+        if folder_path:
+            success, msg = save_to_folder(folder_path)
+            if success:
+                st.sidebar.success(msg)
+                st.rerun()  # 重新整理顯示成功訊息
+            else:
+                st.sidebar.error(msg)
+        else:
+            st.sidebar.warning("請輸入資料夾路徑")
+
+# 雲端模式：上傳檔案
+st.sidebar.markdown("---")
+uploaded_files = st.sidebar.file_uploader(
+    "上傳 CSV 或 ZIP 檔案",
+    type=['csv', 'zip'],
+    accept_multiple_files=True,
+    help="可一次選取多個 CSV 檔案，或上傳包含所有 CSV 的 ZIP 檔"
+)
+
+if uploaded_files:
+    if st.sidebar.button("📤 匯入上傳的檔案", use_container_width=True):
+        success, msg = load_from_uploaded_files(uploaded_files)
+        if success:
+            st.sidebar.success(msg)
+            st.rerun()
+        else:
+            st.sidebar.error(msg)
+
+# 一鍵下載所有資料
+st.sidebar.markdown("---")
+zip_data = export_all_to_zip()
+st.sidebar.download_button(
+    label="📥 下載所有資料 (ZIP)",
+    data=zip_data,
+    file_name=f"investment_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+    mime="application/zip",
+    use_container_width=True
+)
+
+# 顯示資料狀態
+if st.session_state.data_loaded:
+    st.sidebar.success("✅ 資料已載入")
+else:
+    st.sidebar.info("💡 請載入或上傳資料")
 
 # ==================== 投資總覽 ====================
 if page == "📊 投資總覽":
     st.header("投資資金配置總覽")
 
-    # 重新查詢現價按鈕
-    if st.button("🔄 重新查詢現價"):
-        st.cache_data.clear()
-        st.rerun()
+    df_plan = st.session_state.df_plan
+    df_stock = st.session_state.df_stock
+    df_option = st.session_state.df_option
+    df_allocation = st.session_state.df_allocation
+    df_conservative = st.session_state.df_conservative
+    df_lottery = st.session_state.df_lottery
 
-    df_plan = load_data(PLAN_FILE)
-    df_stock = load_data(STOCK_FILE)
-    df_option = load_data(OPTION_FILE)
-    df_allocation = load_data(ALLOCATION_FILE)
-
-    # 顯示恐懼貪婪指數
+    # 顯示恐懼貪婪指數（儀表板樣式）
     fgi = get_fear_greed_index()
     if fgi:
-        # 根據數值決定顏色
         value = fgi['value']
-        if value <= 25:
-            color = '#e74c3c'  # 極度恐懼 - 紅色
-            emoji = '😱'
-        elif value <= 45:
-            color = '#e67e22'  # 恐懼 - 橘色
-            emoji = '😨'
-        elif value <= 55:
-            color = '#f1c40f'  # 中性 - 黃色
-            emoji = '😐'
-        elif value <= 75:
-            color = '#2ecc71'  # 貪婪 - 綠色
-            emoji = '😊'
-        else:
-            color = '#27ae60'  # 極度貪婪 - 深綠
-            emoji = '🤑'
 
-        st.markdown(
-            f"""
-            <div style="background: linear-gradient(90deg, {color}22, {color}44);
-                        border-left: 4px solid {color}; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
-                <span style="font-size: 24px;">{emoji}</span>
-                <strong style="font-size: 18px; margin-left: 10px;">恐懼貪婪指數: {value:.0f}</strong>
-                <span style="color: {color}; font-weight: bold; margin-left: 10px;">{fgi['description']}</span>
-                <span style="color: #888; font-size: 12px; margin-left: 15px;">更新: {fgi['last_update']}</span>
-            </div>
-            """,
-            unsafe_allow_html=True
+        # 建立儀表板圖表
+        fig_gauge = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=value,
+            title={'text': f"恐懼貪婪指數<br><span style='font-size:14px;color:gray'>{fgi['description']}</span>"},
+            gauge={
+                'axis': {
+                    'range': [0, 100],
+                    'tickwidth': 1,
+                    'tickmode': 'array',
+                    'tickvals': [0, 25, 50, 75, 100],
+                    'ticktext': ['0', '25', '50', '75', '100']
+                },
+                'bar': {'color': "darkblue"},
+                'bgcolor': "white",
+                'steps': [
+                    {'range': [0, 25], 'color': '#e74c3c'},    # 極度恐懼 - 紅色
+                    {'range': [25, 45], 'color': '#e67e22'},   # 恐懼 - 橘色
+                    {'range': [45, 55], 'color': '#f1c40f'},   # 中性 - 黃色
+                    {'range': [55, 75], 'color': '#2ecc71'},   # 貪婪 - 綠色
+                    {'range': [75, 100], 'color': '#27ae60'}   # 極度貪婪 - 深綠
+                ],
+                'threshold': {
+                    'line': {'color': "black", 'width': 4},
+                    'thickness': 0.75,
+                    'value': value
+                }
+            }
+        ))
+
+        fig_gauge.update_layout(
+            height=300,
+            margin=dict(l=30, r=30, t=60, b=30),
+            annotations=[
+                dict(
+                    text=f"更新: {fgi['last_update']}",
+                    x=0.5, y=-0.1,
+                    showarrow=False,
+                    font=dict(size=10, color='gray')
+                )
+            ]
         )
+
+        # 使用較窄的欄位顯示
+        col_gauge, col_empty = st.columns([1, 2])
+        with col_gauge:
+            st.plotly_chart(fig_gauge, use_container_width=True)
+
     elif FEAR_GREED_AVAILABLE:
         st.warning("⚠️ 無法取得恐懼貪婪指數")
 
@@ -365,38 +576,100 @@ if page == "📊 投資總覽":
                         # 實際金額從交易記錄計算（僅股票成本）
                         stock_actual = calculate_actual_investment(df_stock, '進攻型', stock_code)
                         # 選擇權保證金（資金來源為此股票）
-                        stock_margin = calculate_option_margin(df_option, stock_code)
+                        stock_margin, margin_details = calculate_option_margin(df_option, stock_code, return_details=True)
 
                         chart_data.append({
                             'name': stock_code,
                             'type': '進攻型',
                             'planned': stock_planned,
                             'actual': stock_actual,
-                            'margin': stock_margin
+                            'margin': stock_margin,
+                            'margin_details': margin_details
                         })
-            else:
-                # 保守型和樂透型直接計算
-                actual = calculate_actual_investment(df_stock, inv_type)
-                chart_data.append({
-                    'name': inv_type,
-                    'type': inv_type,
-                    'planned': planned,
-                    'actual': actual,
-                    'margin': 0
-                })
+            elif inv_type == '保守型':
+                # 保守型拆分成各股票
+                if not df_conservative.empty:
+                    for _, stock_row in df_conservative.iterrows():
+                        stock_code = stock_row['股票代碼']
+                        weight = float(stock_row['比重'])
+
+                        stock_planned = planned * (weight / 100)
+                        stock_actual = calculate_actual_investment(df_stock, '保守型', stock_code)
+
+                        chart_data.append({
+                            'name': stock_code,
+                            'type': '保守型',
+                            'planned': stock_planned,
+                            'actual': stock_actual,
+                            'margin': 0
+                        })
+                else:
+                    # 沒有配置時顯示整體
+                    actual = calculate_actual_investment(df_stock, inv_type)
+                    chart_data.append({
+                        'name': inv_type,
+                        'type': inv_type,
+                        'planned': planned,
+                        'actual': actual,
+                        'margin': 0
+                    })
+            elif inv_type == '樂透型':
+                # 樂透型拆分成各股票
+                if not df_lottery.empty:
+                    for _, stock_row in df_lottery.iterrows():
+                        stock_code = stock_row['股票代碼']
+                        weight = float(stock_row['比重'])
+
+                        stock_planned = planned * (weight / 100)
+                        stock_actual = calculate_actual_investment(df_stock, '樂透型', stock_code)
+
+                        chart_data.append({
+                            'name': stock_code,
+                            'type': '樂透型',
+                            'planned': stock_planned,
+                            'actual': stock_actual,
+                            'margin': 0
+                        })
+                else:
+                    # 沒有配置時顯示整體
+                    actual = calculate_actual_investment(df_stock, inv_type)
+                    chart_data.append({
+                        'name': inv_type,
+                        'type': inv_type,
+                        'planned': planned,
+                        'actual': actual,
+                        'margin': 0
+                    })
 
     # 顯示長條圖
     if chart_data:
-        st.subheader("📊 資金分配圖表")
+        # 標題和重新查詢按鈕放在同一行
+        col_title, col_btn = st.columns([3, 1])
+        with col_title:
+            st.subheader("📊 資金分配圖表")
+        with col_btn:
+            if st.button("🔄 重新查詢現價"):
+                st.cache_data.clear()
+                st.rerun()
 
         # 計算目前市值
         market_values = []
+        price_fetch_failed = False
         for d in chart_data:
-            if d['type'] == '進攻型':
-                mv = calculate_market_value(df_stock, '進攻型', d['name'])
+            # 如果 name 不等於 type，表示是個別股票
+            if d['name'] != d['type']:
+                mv = calculate_market_value(df_stock, d['type'], d['name'])
             else:
                 mv = calculate_market_value(df_stock, d['type'])
             market_values.append(mv)
+            if mv == 0 and d['name'] != d['type']:
+                # 檢查是否有持股但市值為0（可能是取價失敗）
+                holdings = calculate_holdings(df_stock, d['type'], d['name'])
+                if holdings and sum(holdings.values()) > 0:
+                    price_fetch_failed = True
+
+        if price_fetch_failed:
+            st.warning("⚠️ 部分股票現價查詢失敗（Yahoo Finance 可能被限速），請稍後點擊「重新查詢現價」")
 
         # 準備圖表
         categories = [d['name'] for d in chart_data]
@@ -412,21 +685,23 @@ if page == "📊 投資總覽":
             category = d['type']
 
             # 計算成本價 (實際買入金額 / 持股數)
-            holdings = calculate_holdings(df_stock, category, stock_code if category == '進攻型' else None)
+            # 如果 name 不等於 type，表示是個別股票
+            is_individual_stock = (stock_code != category)
+            holdings = calculate_holdings(df_stock, category, stock_code if is_individual_stock else None)
             total_shares = sum(holdings.values()) if holdings else 0
             cost_price = actual_values[i] / total_shares if total_shares > 0 else 0
 
             # 取得現價
-            if category == '進攻型':
+            if is_individual_stock:
                 current_price = get_current_price(stock_code) or 0
             else:
-                # 非進攻型可能有多檔股票，顯示總市值
+                # 未配置時可能有多檔股票，取最後一檔的價格
                 current_price = 0
                 if holdings:
                     for code in holdings:
                         p = get_current_price(code)
                         if p:
-                            current_price = p  # 簡化：取最後一檔的價格
+                            current_price = p
 
             # 實際買入 hover 文字
             if actual_values[i] > 0:
@@ -450,6 +725,23 @@ if page == "📊 投資總覽":
 
         # 取得保證金數據
         margin_values = [d.get('margin', 0) for d in chart_data]
+
+        # 建立選擇權保證金 hover 文字
+        margin_hover_texts = []
+        for d in chart_data:
+            margin_details = d.get('margin_details', [])
+            margin_total = d.get('margin', 0)
+            if margin_total > 0 and margin_details:
+                # 顯示標的股票和保證金
+                hover_lines = [f"<b>選擇權保證金</b>"]
+                for detail in margin_details:
+                    hover_lines.append(f"{detail['ticker']}: ${detail['margin']:,.0f}")
+                hover_lines.append(f"<b>合計: ${margin_total:,.0f}</b>")
+                margin_hover_texts.append("<br>".join(hover_lines))
+            elif margin_total > 0:
+                margin_hover_texts.append(f"<b>選擇權保證金</b><br>${margin_total:,.0f}")
+            else:
+                margin_hover_texts.append("")
 
         # 使用 Plotly 建立圖表
         fig = go.Figure()
@@ -490,7 +782,8 @@ if page == "📊 投資總覽":
             text=[f'${int(v):,}' if v > 0 else '' for v in margin_values],
             textposition='outside',
             textangle=-45,
-            hovertemplate='<b>%{x}</b><br>選擇權保證金: $%{y:,.0f}<extra></extra>',
+            hovertemplate='%{customdata}<extra></extra>',
+            customdata=margin_hover_texts,
             offsetgroup='actual',
             base=actual_values
         ))
@@ -541,6 +834,11 @@ if page == "📊 投資總覽":
                                         xshift=-40  # 往左偏移到預計投入長條上
                                     )
 
+        # 計算 Y 軸最大值，加上 20% 空間顯示數字
+        all_values = planned_values + actual_values + market_values + [a + m for a, m in zip(actual_values, margin_values)]
+        max_value = max(all_values) if all_values else 0
+        y_max = max_value * 1.25  # 增加 25% 空間
+
         fig.update_layout(
             title='預計投入 vs 實際買入 vs 目前市值',
             xaxis_title='投資類型/股票',
@@ -549,7 +847,8 @@ if page == "📊 投資總覽":
             xaxis_tickangle=-45,
             legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
             height=500,
-            margin=dict(t=80, b=80)
+            margin=dict(t=80, b=80),
+            yaxis=dict(range=[0, y_max])
         )
 
         fig.update_yaxes(gridcolor='rgba(0,0,0,0.1)')
@@ -574,64 +873,88 @@ if page == "📊 投資總覽":
         total_planned = sum([d['planned'] for d in chart_data])
         grand_total = total_planned + opt_total
 
+        # 計算每個項目的報酬率
+        def get_return_info(d, idx):
+            """計算報酬率資訊"""
+            actual = d['actual']
+            mv = market_values[idx]
+            if actual > 0 and mv > 0:
+                profit = mv - actual
+                return_rate = (profit / actual) * 100
+                return profit, return_rate
+            return 0, 0
+
         # 按類型分組顯示
         col1, col2, col3 = st.columns(3)
 
         # 保守型
-        conservative_data = [d for d in chart_data if d['type'] == '保守型']
+        conservative_data = [(d, i) for i, d in enumerate(chart_data) if d['type'] == '保守型']
         if conservative_data:
             with col1:
                 st.write("**🟢 保守型**")
-                for d in conservative_data:
-                    st.metric(d['name'],
-                             f"${d['actual']:,.2f}",
-                             delta=f"預計: ${d['planned']:,.2f}")
+                for d, idx in conservative_data:
+                    profit, return_rate = get_return_info(d, idx)
+                    mv = market_values[idx]
                     exec_rate = (d['actual'] / d['planned'] * 100) if d['planned'] > 0 else 0
-                    pct = (d['actual'] / grand_total * 100) if grand_total > 0 else 0
-                    st.caption(f"執行率: {exec_rate:.1f}%")
-                    st.caption(f"資金佔比: {pct:.1f}%")
+
+                    # 使用 st.metric 原生箭頭：正數綠色向上、負數紅色向下
+                    delta_str = f"{return_rate:+.1f}%"
+
+                    st.metric(d['name'], f"${mv:,.0f}" if mv > 0 else f"${d['actual']:,.0f}", delta=delta_str)
+                    st.caption(f"成本: ${d['actual']:,.0f} | 損益: ${profit:,.0f}")
+                    st.progress(min(exec_rate / 100, 1.0), text=f"完成率: {exec_rate:.0f}%")
 
         # 樂透型
-        lottery_data = [d for d in chart_data if d['type'] == '樂透型']
+        lottery_data = [(d, i) for i, d in enumerate(chart_data) if d['type'] == '樂透型']
         if lottery_data:
             with col2:
                 st.write("**🟡 樂透型**")
-                for d in lottery_data:
-                    st.metric(d['name'],
-                             f"${d['actual']:,.2f}",
-                             delta=f"預計: ${d['planned']:,.2f}")
+                for d, idx in lottery_data:
+                    profit, return_rate = get_return_info(d, idx)
+                    mv = market_values[idx]
                     exec_rate = (d['actual'] / d['planned'] * 100) if d['planned'] > 0 else 0
-                    pct = (d['actual'] / grand_total * 100) if grand_total > 0 else 0
-                    st.caption(f"執行率: {exec_rate:.1f}%")
-                    st.caption(f"資金佔比: {pct:.1f}%")
+
+                    # 使用 st.metric 原生箭頭：正數綠色向上、負數紅色向下
+                    delta_str = f"{return_rate:+.1f}%"
+
+                    st.metric(d['name'], f"${mv:,.0f}" if mv > 0 else f"${d['actual']:,.0f}", delta=delta_str)
+                    st.caption(f"成本: ${d['actual']:,.0f} | 損益: ${profit:,.0f}")
+                    st.progress(min(exec_rate / 100, 1.0), text=f"完成率: {exec_rate:.0f}%")
 
         # 進攻型統計
-        aggressive_data = [d for d in chart_data if d['type'] == '進攻型']
+        aggressive_data = [(d, i) for i, d in enumerate(chart_data) if d['type'] == '進攻型']
         if aggressive_data:
             with col3:
                 st.write("**🔵 進攻型**")
-                total_agg_planned = sum([d['planned'] for d in aggressive_data])
-                total_agg_actual = sum([d['actual'] for d in aggressive_data])
-                st.metric("總計",
-                         f"${total_agg_actual:,.2f}",
-                         delta=f"預計: ${total_agg_planned:,.2f}")
-                exec_rate = (total_agg_actual / total_agg_planned * 100) if total_agg_planned > 0 else 0
-                pct = (total_agg_actual / grand_total * 100) if grand_total > 0 else 0
-                st.caption(f"執行率: {exec_rate:.1f}%")
-                st.caption(f"資金佔比: {pct:.1f}%")
-        
+                total_agg_actual = sum([d['actual'] for d, _ in aggressive_data])
+                total_agg_mv = sum([market_values[idx] for _, idx in aggressive_data])
+                total_agg_planned = sum([d['planned'] for d, _ in aggressive_data])
+                total_agg_profit = total_agg_mv - total_agg_actual
+                total_agg_return = (total_agg_profit / total_agg_actual * 100) if total_agg_actual > 0 else 0
+                total_agg_exec = (total_agg_actual / total_agg_planned * 100) if total_agg_planned > 0 else 0
+
+                # 使用 st.metric 原生箭頭：正數綠色向上、負數紅色向下
+                delta_str = f"{total_agg_return:+.1f}%"
+
+                st.metric("總計", f"${total_agg_mv:,.0f}" if total_agg_mv > 0 else f"${total_agg_actual:,.0f}", delta=delta_str)
+                st.caption(f"成本: ${total_agg_actual:,.0f} | 損益: ${total_agg_profit:,.0f}")
+                st.progress(min(total_agg_exec / 100, 1.0), text=f"完成率: {total_agg_exec:.0f}%")
+
         # 進攻型各股明細
         if aggressive_data:
             st.write("**進攻型各股明細**")
             cols = st.columns(min(len(aggressive_data), 5))
-            for i, d in enumerate(aggressive_data):
+            for i, (d, idx) in enumerate(aggressive_data):
                 with cols[i % 5]:
-                    st.write(f"**{d['name']}**")
-                    st.metric("實際", f"${d['actual']:,.2f}")
-                    st.caption(f"預計: ${d['planned']:,.2f}")
-                    exec_rate = (d['actual'] / d['planned'] * 100) if d['planned'] > 0 else 0
-                    st.caption(f"執行率: {exec_rate:.1f}%")
-        
+                    profit, return_rate = get_return_info(d, idx)
+                    mv = market_values[idx]
+
+                    # 使用 st.metric 原生箭頭：正數綠色向上、負數紅色向下
+                    delta_str = f"{return_rate:+.1f}%"
+
+                    st.metric(d['name'], f"${mv:,.0f}" if mv > 0 else "-", delta=delta_str)
+                    st.caption(f"成本: ${d['actual']:,.0f} | 損益: ${profit:,.0f}")
+
         # 選擇權
         st.divider()
         st.subheader("🟣 選擇權投資")
@@ -649,21 +972,49 @@ if page == "📊 投資總覽":
         else:
             total_margin = 0
 
-        col1, col2 = st.columns(2)
+        # 計算選擇權報酬率
+        if total_margin > 0:
+            opt_return_rate = (opt_total / total_margin) * 100
+            if opt_return_rate > 0:
+                opt_return_str = f"📈 +{opt_return_rate:.1f}%"
+            elif opt_return_rate < 0:
+                opt_return_str = f"📉 {opt_return_rate:.1f}%"
+            else:
+                opt_return_str = "0%"
+        else:
+            opt_return_rate = 0
+            opt_return_str = "-"
+
+        col1, col2, col3 = st.columns(3)
         col1.metric("選擇權收支", f"${opt_total:,.2f}")
         if total_margin > 0:
             col2.metric("🔒 被壓住的保證金", f"${total_margin:,.0f}")
+            col3.metric("報酬率", opt_return_str)
 
         # 總計
         st.divider()
-        total_actual = sum([d['actual'] for d in chart_data]) + opt_total
+        st.subheader("📊 投資組合總覽")
 
-        col1, col2 = st.columns(2)
-        col1.metric("📋 預計投入總額", f"${total_planned:,.2f}")
-        col2.metric("💰 實際買入總額", f"${total_actual:,.2f}")
+        total_actual = sum([d['actual'] for d in chart_data])
+        total_market_value = sum(market_values)
+        total_profit = total_market_value - total_actual
+        total_return_rate = (total_profit / total_actual * 100) if total_actual > 0 else 0
 
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("💵 總成本", f"${total_actual:,.0f}")
+        col2.metric("💰 總市值", f"${total_market_value:,.0f}" if total_market_value > 0 else "-")
+
+        # 報酬率顯示
+        if total_return_rate > 0:
+            col3.metric("📈 總報酬率", f"+{total_return_rate:.1f}%", delta=f"${total_profit:,.0f}")
+        elif total_return_rate < 0:
+            col3.metric("📉 總報酬率", f"{total_return_rate:.1f}%", delta=f"${total_profit:,.0f}")
+        else:
+            col3.metric("📊 總報酬率", "0%", delta="$0")
+
+        # 執行率
         overall_exec_rate = (total_actual / total_planned * 100) if total_planned > 0 else 0
-        st.info(f"整體執行率: {overall_exec_rate:.1f}%")
+        col4.metric("🎯 執行率", f"{overall_exec_rate:.1f}%", delta=f"預計: ${total_planned:,.0f}")
     
     else:
         st.warning("⚠️ 請先在「投資計畫管理」設定投資計畫")
@@ -671,40 +1022,38 @@ if page == "📊 投資總覽":
 # ==================== 投資計畫管理 ====================
 elif page == "💵 投資計畫管理":
     st.header("投資計畫管理")
-    df_plan = load_data(PLAN_FILE)
-    df_allocation = load_data(ALLOCATION_FILE)
-    
+    df_plan = st.session_state.df_plan.copy()
+    df_allocation = st.session_state.df_allocation.copy()
+
     st.subheader("📋 表格1: 投資計畫")
     if df_plan.empty:
         df_plan = pd.DataFrame({
             '時間': [datetime.now().date(), datetime.now().date(), datetime.now().date()],
-            '投資類型': ['保守型', '進攻型', '樂透型'], 
+            '投資類型': ['保守型', '進攻型', '樂透型'],
             '預計投入(USD)': [0.0, 0.0, 0.0],
             '匯率': [USD_RATE, USD_RATE, USD_RATE]
         })
-        df_plan.to_csv(PLAN_FILE, index=False, encoding='utf-8-sig')
     else:
         # 轉換時間欄位
         df_plan['時間'] = pd.to_datetime(df_plan['時間']).dt.date
-    
+        # 按時間排序
+        df_plan = df_plan.sort_values('時間', ascending=True).reset_index(drop=True)
+
     edited_plan = st.data_editor(df_plan, num_rows="dynamic", use_container_width=True,
         column_config={
             "時間": st.column_config.DateColumn("時間", required=True),
-            "投資類型": st.column_config.SelectboxColumn("投資類型", 
+            "投資類型": st.column_config.SelectboxColumn("投資類型",
                 options=["保守型", "進攻型", "樂透型"], required=True),
-            "預計投入(USD)": st.column_config.NumberColumn("預計投入(USD)", 
+            "預計投入(USD)": st.column_config.NumberColumn("預計投入(USD)",
                 format="$%.2f", min_value=0, required=True),
-            "匯率": st.column_config.NumberColumn("匯率(USD→TWD)", 
+            "匯率": st.column_config.NumberColumn("匯率(USD→TWD)",
                 format="%.2f", min_value=0, help=f"參考匯率: {USD_RATE}")
         })
-    
-    if st.button("💾 儲存投資計畫"):
-        # 轉換日期為字串儲存
-        edited_plan['時間'] = edited_plan['時間'].astype(str)
-        edited_plan.to_csv(PLAN_FILE, index=False, encoding='utf-8-sig')
-        st.success("✅ 已儲存!")
-        st.rerun()
-    
+
+    # 自動儲存到 session_state
+    edited_plan['時間'] = edited_plan['時間'].astype(str)
+    st.session_state.df_plan = edited_plan
+
     # 檢查保守型月度計畫
     missing_months = check_monthly_conservative_plan(edited_plan)
     if missing_months:
@@ -744,8 +1093,7 @@ elif page == "💵 投資計畫管理":
             '邊際4(%)': [70.0],
             '邊際5(%)': [50.0]
         })
-        df_allocation.to_csv(ALLOCATION_FILE, index=False, encoding='utf-8-sig')
-    
+
     edited_alloc = st.data_editor(df_allocation, num_rows="dynamic", use_container_width=True,
         column_config={
             "股票代碼": st.column_config.TextColumn("代碼", required=True),
@@ -757,43 +1105,99 @@ elif page == "💵 投資計畫管理":
             "邊際4(%)": st.column_config.NumberColumn("邊際4", format="%.0f%%"),
             "邊際5(%)": st.column_config.NumberColumn("邊際5", format="%.0f%%")
         })
-    
+
     total_weight = edited_alloc['比重'].sum()
     if total_weight != 100:
         st.warning(f"⚠️ 總比重: {total_weight}%")
     else:
         st.success(f"✅ 總比重: {total_weight}%")
-    
-    if st.button("💾 儲存股票配置"):
-        edited_alloc.to_csv(ALLOCATION_FILE, index=False, encoding='utf-8-sig')
-        st.success("✅ 已儲存!")
-        st.rerun()
-    
+
+    # 自動儲存到 session_state
+    st.session_state.df_allocation = edited_alloc
+
     # 顯示買入參考價格表
+    # 顯示邊際價格（文字格式）
     if not edited_alloc.empty:
-        st.write("**📋 五檔買入參考價格表**")
-        price_table = []
+        st.write("**📋 五檔買入參考價格**")
         for _, row in edited_alloc.iterrows():
             code = row['股票代碼']
             fair = row['公允值(USD)']
             if fair > 0:
-                prices = {'代碼': code, '公允值': f"${fair:.2f}"}
+                # 取得現價
+                current_price = get_current_price(code)
+                # 計算邊際價格
+                margin_prices = []
                 for i in range(1, 6):
                     margin = row[f'邊際{i}(%)']
                     if margin > 0:
-                        prices[f'第{i}檔'] = f"${fair * margin / 100:.2f}"
-                    else:
-                        prices[f'第{i}檔'] = "-"
-                price_table.append(prices)
-        
-        if price_table:
-            st.dataframe(pd.DataFrame(price_table), use_container_width=True, hide_index=True)
+                        margin_prices.append(f"{fair * margin / 100:.2f}")
+                if margin_prices:
+                    price_str = " / ".join(margin_prices)
+                    st.write(f"**{code}**: 現價 {current_price:.2f} | 邊際價: {price_str}")
+
+    # ==================== 保守型股票配置 ====================
+    st.divider()
+    st.subheader("🟢 表格3: 保守型股票配置")
+    st.info("💡 保守型通常配置 ETF 或穩定型股票，如 VOO、VTI、BND 等")
+
+    df_conservative = st.session_state.df_conservative.copy()
+    if df_conservative.empty:
+        df_conservative = pd.DataFrame({
+            '股票代碼': ['VOO'],
+            '比重': [100.0],
+            '說明': ['S&P 500 ETF']
+        })
+
+    edited_conservative = st.data_editor(df_conservative, num_rows="dynamic", use_container_width=True,
+        column_config={
+            "股票代碼": st.column_config.TextColumn("代碼", required=True),
+            "比重": st.column_config.NumberColumn("比重(%)", format="%.0f", required=True),
+            "說明": st.column_config.TextColumn("說明")
+        }, key="conservative_editor")
+
+    conservative_weight = edited_conservative['比重'].sum()
+    if conservative_weight != 100:
+        st.warning(f"⚠️ 保守型總比重: {conservative_weight}%")
+    else:
+        st.success(f"✅ 保守型總比重: {conservative_weight}%")
+
+    # 自動儲存到 session_state
+    st.session_state.df_conservative = edited_conservative
+
+    # ==================== 樂透型股票配置 ====================
+    st.divider()
+    st.subheader("🟡 表格4: 樂透型股票配置")
+    st.info("💡 樂透型可配置高風險高報酬的標的，如小型成長股、加密貨幣等")
+
+    df_lottery = st.session_state.df_lottery.copy()
+    if df_lottery.empty:
+        df_lottery = pd.DataFrame({
+            '股票代碼': ['BTC'],
+            '比重': [100.0],
+            '說明': ['比特幣']
+        })
+
+    edited_lottery = st.data_editor(df_lottery, num_rows="dynamic", use_container_width=True,
+        column_config={
+            "股票代碼": st.column_config.TextColumn("代碼", required=True),
+            "比重": st.column_config.NumberColumn("比重(%)", format="%.0f", required=True),
+            "說明": st.column_config.TextColumn("說明")
+        }, key="lottery_editor")
+
+    lottery_weight = edited_lottery['比重'].sum()
+    if lottery_weight != 100:
+        st.warning(f"⚠️ 樂透型總比重: {lottery_weight}%")
+    else:
+        st.success(f"✅ 樂透型總比重: {lottery_weight}%")
+
+    # 自動儲存到 session_state
+    st.session_state.df_lottery = edited_lottery
 
 # ==================== 股票交易記錄 ====================
 elif page == "📈 股票交易記錄":
     st.header("股票交易記錄")
-    df_stock = load_data(STOCK_FILE)
-    
+    df_stock = st.session_state.df_stock.copy()
+
     st.info("💡 只需填寫: 日期、類型、分類、代碼、股數、價格 | 其他欄位可選填(空白則使用預設值)")
     
     if df_stock.empty:
@@ -818,7 +1222,9 @@ elif page == "📈 股票交易記錄":
         df_stock['交易稅(USD)'].fillna(0.0, inplace=True)
         df_stock['用途說明'].fillna('', inplace=True)
         df_stock['備註'].fillna('', inplace=True)
-    
+        # 按交易日期排序
+        df_stock = df_stock.sort_values('交易日期', ascending=True).reset_index(drop=True)
+
     edited_stock = st.data_editor(df_stock, num_rows="dynamic", use_container_width=True,
         column_config={
             "交易日期": st.column_config.DateColumn("日期", required=True),
@@ -872,42 +1278,39 @@ elif page == "📈 股票交易記錄":
         if preview_data:
             st.dataframe(pd.DataFrame(preview_data), use_container_width=True, hide_index=True)
     
-    if st.button("💾 儲存股票交易記錄"):
-        # 處理預設值
-        for idx, row in edited_stock.iterrows():
-            # 填充用途說明和備註的空值
-            if pd.isna(row['用途說明']) or row['用途說明'] == '':
-                edited_stock.at[idx, '用途說明'] = ''
-            if pd.isna(row['備註']) or row['備註'] == '':
-                edited_stock.at[idx, '備註'] = ''
-            
-            # 計算交易金額
-            shares = abs(row['股數'])
-            price = row['成交價格(USD)']
-            trade_amt = shares * price
-            
-            # 手續費預設值
-            if pd.isna(row['手續費(USD)']) or row['手續費(USD)'] == 0:
-                edited_stock.at[idx, '手續費(USD)'] = trade_amt * 0.001425
-            
-            # 交易稅預設值
-            if row['交易類型'] == '賣出':
-                if pd.isna(row['交易稅(USD)']) or row['交易稅(USD)'] == 0:
-                    edited_stock.at[idx, '交易稅(USD)'] = trade_amt * 0.003
-            else:
-                edited_stock.at[idx, '交易稅(USD)'] = 0
-            
-            # 股數正負號
-            if row['交易類型'] == '買進':
-                edited_stock.at[idx, '股數'] = abs(row['股數'])
-            else:
-                edited_stock.at[idx, '股數'] = -abs(row['股數'])
-        
-        edited_stock['交易日期'] = edited_stock['交易日期'].astype(str)
-        edited_stock.to_csv(STOCK_FILE, index=False, encoding='utf-8-sig')
-        st.success("✅ 已儲存! 空白欄位已自動填入預設值")
-        st.rerun()
-    
+    # 自動處理預設值並儲存到 session_state
+    for idx, row in edited_stock.iterrows():
+        # 填充用途說明和備註的空值
+        if pd.isna(row['用途說明']) or row['用途說明'] == '':
+            edited_stock.at[idx, '用途說明'] = ''
+        if pd.isna(row['備註']) or row['備註'] == '':
+            edited_stock.at[idx, '備註'] = ''
+
+        # 計算交易金額
+        shares = abs(row['股數'])
+        price = row['成交價格(USD)']
+        trade_amt = shares * price
+
+        # 手續費預設值
+        if pd.isna(row['手續費(USD)']) or row['手續費(USD)'] == 0:
+            edited_stock.at[idx, '手續費(USD)'] = trade_amt * 0.001425
+
+        # 交易稅預設值
+        if row['交易類型'] == '賣出':
+            if pd.isna(row['交易稅(USD)']) or row['交易稅(USD)'] == 0:
+                edited_stock.at[idx, '交易稅(USD)'] = trade_amt * 0.003
+        else:
+            edited_stock.at[idx, '交易稅(USD)'] = 0
+
+        # 股數正負號
+        if row['交易類型'] == '買進':
+            edited_stock.at[idx, '股數'] = abs(row['股數'])
+        else:
+            edited_stock.at[idx, '股數'] = -abs(row['股數'])
+
+    edited_stock['交易日期'] = edited_stock['交易日期'].astype(str)
+    st.session_state.df_stock = edited_stock
+
     # 統計
     if not df_stock.empty and len(df_stock) > 0:
         st.divider()
@@ -935,7 +1338,7 @@ elif page == "📈 股票交易記錄":
 # ==================== 選擇權交易記錄 ====================
 elif page == "🎯 選擇權交易記錄":
     st.header("選擇權交易記錄")
-    df_option = load_data(OPTION_FILE)
+    df_option = st.session_state.df_option.copy()
 
     st.info("💡 直接在表格中編輯,自動計算金額")
 
@@ -968,6 +1371,8 @@ elif page == "🎯 選擇權交易記錄":
             df_option['保證金(USD)'] = 0.0
         if '買賣方向' not in df_option.columns:
             df_option['買賣方向'] = '賣出'
+        # 按交易日期排序
+        df_option = df_option.sort_values('交易日期', ascending=True).reset_index(drop=True)
 
     edited_option = st.data_editor(df_option, num_rows="dynamic", use_container_width=True,
         column_config={
@@ -991,31 +1396,29 @@ elif page == "🎯 選擇權交易記錄":
             "策略說明": st.column_config.TextColumn("策略")
         }, key="option_editor")
     
-    if st.button("💾 儲存選擇權交易記錄"):
-        for idx, row in edited_option.iterrows():
-            contracts = row['口數']
-            premium = row['權利金']
-            
-            trade_amt = contracts * premium * 100
-            edited_option.at[idx, '交易金額(USD)'] = trade_amt
-            
-            if row['手續費(USD)'] == 0:
-                edited_option.at[idx, '手續費(USD)'] = 1.0
-            
-            fee = edited_option.at[idx, '手續費(USD)']
-            edited_option.at[idx, '總成本(USD)'] = trade_amt + fee
-        
-        edited_option['交易日期'] = edited_option['交易日期'].astype(str)
-        edited_option['到期日'] = edited_option['到期日'].astype(str)
-        edited_option.to_csv(OPTION_FILE, index=False, encoding='utf-8-sig')
-        st.success("✅ 已儲存!")
-        st.rerun()
+    # 自動處理預設值並儲存到 session_state
+    for idx, row in edited_option.iterrows():
+        contracts = row['口數']
+        premium = row['權利金']
+
+        trade_amt = contracts * premium * 100
+        edited_option.at[idx, '交易金額(USD)'] = trade_amt
+
+        if row['手續費(USD)'] == 0:
+            edited_option.at[idx, '手續費(USD)'] = 1.0
+
+        fee = edited_option.at[idx, '手續費(USD)']
+        edited_option.at[idx, '總成本(USD)'] = trade_amt + fee
+
+    edited_option['交易日期'] = edited_option['交易日期'].astype(str)
+    edited_option['到期日'] = edited_option['到期日'].astype(str)
+    st.session_state.df_option = edited_option
 
 # ==================== 數據分析 ====================
 elif page == "📉 數據分析":
     st.header("數據分析")
-    df_stock = load_data(STOCK_FILE)
-    
+    df_stock = st.session_state.df_stock
+
     if df_stock.empty:
         st.warning("尚無數據")
     else:
@@ -1084,7 +1487,6 @@ elif page == "📉 數據分析":
         else:
             st.info("無持倉")
 
-# 側邊欄
+# 側邊欄底部資訊
 st.sidebar.divider()
 st.sidebar.info(f"**匯率參考:** 1 USD = {USD_RATE} TWD")
-st.sidebar.success("✅ 數據自動儲存")
