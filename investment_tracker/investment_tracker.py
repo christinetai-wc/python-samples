@@ -255,6 +255,35 @@ def get_current_price(ticker):
     except:
         return None
 
+# 取得即時匯率
+@st.cache_data(ttl=300)  # 快取5分鐘
+def get_exchange_rate(from_currency="USD", to_currency="TWD"):
+    """使用 yfinance 取得匯率"""
+    if not YFINANCE_AVAILABLE:
+        return None
+    try:
+        ticker = yf.Ticker(f"{from_currency}{to_currency}=X")
+
+        # 方法1: 使用 fast_info
+        try:
+            rate = ticker.fast_info.get('lastPrice') or ticker.fast_info.get('previousClose')
+            if rate:
+                return float(rate)
+        except:
+            pass
+
+        # 方法2: 使用 history
+        try:
+            hist = ticker.history(period='1d')
+            if not hist.empty:
+                return float(hist['Close'].iloc[-1])
+        except:
+            pass
+
+        return None
+    except:
+        return None
+
 # 計算持股數量
 def calculate_holdings(df_stock, category, stock_code=None):
     """計算某分類或特定股票的持有股數"""
@@ -546,7 +575,8 @@ if page == "📊 投資總覽":
     elif FEAR_GREED_AVAILABLE:
         st.warning("⚠️ 無法取得恐懼貪婪指數")
 
-    st.info(f"💡 預計金額來自投資計畫CSV，實際金額來自交易記錄CSV | 參考匯率: USD 1 = TWD {USD_RATE}")
+    rate_display = get_exchange_rate("USD", "TWD") or USD_RATE
+    st.info(f"💡 預計金額來自投資計畫CSV，實際金額來自交易記錄CSV | 即時匯率: USD 1 = TWD {rate_display:.2f}")
     
     # 準備圖表數據
     chart_data = []
@@ -1047,7 +1077,7 @@ elif page == "💵 投資計畫管理":
             "預計投入(USD)": st.column_config.NumberColumn("預計投入(USD)",
                 format="$%.2f", min_value=0, required=True),
             "匯率": st.column_config.NumberColumn("匯率(USD→TWD)",
-                format="%.2f", min_value=0, help=f"參考匯率: {USD_RATE}")
+                format="%.2f", min_value=0, help=f"即時匯率: {get_exchange_rate('USD', 'TWD') or USD_RATE:.2f}")
         })
 
     # 自動儲存到 session_state
@@ -1489,4 +1519,8 @@ elif page == "📉 數據分析":
 
 # 側邊欄底部資訊
 st.sidebar.divider()
-st.sidebar.info(f"**匯率參考:** 1 USD = {USD_RATE} TWD")
+live_rate = get_exchange_rate("USD", "TWD")
+if live_rate:
+    st.sidebar.info(f"**即時匯率:** 1 USD = {live_rate:.2f} TWD")
+else:
+    st.sidebar.info(f"**匯率參考:** 1 USD = {USD_RATE} TWD")

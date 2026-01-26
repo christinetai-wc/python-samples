@@ -97,7 +97,7 @@ Streamlit 單頁應用
 | 資料載入/儲存 | load_from_folder, load_from_uploaded_files, save_to_folder, export_all_to_zip |
 | 計算函數 | calculate_actual_investment, calculate_option_margin, calculate_holdings, calculate_market_value |
 | 驗證函數 | check_monthly_conservative_plan, check_conservative_monthly_limit, check_lottery_ratio |
-| 外部 API | get_fear_greed_index, get_current_price |
+| 外部 API | get_fear_greed_index, get_current_price, get_exchange_rate |
 | 頁面渲染 | 各功能頁面的 UI 邏輯 |
 
 ---
@@ -243,13 +243,13 @@ Streamlit 單頁應用
 ### 可選依賴
 | 套件 | 用途 | 缺少時行為 |
 |-----|------|-----------|
-| yfinance | 股價查詢 | 市值顯示為 0 |
+| yfinance | 股價查詢、即時匯率 | 市值顯示為 0，匯率使用預設值 |
 | fear_and_greed | 恐懼貪婪指數 | 不顯示儀表板 |
 
 ### 外部 API
 | 服務 | 端點 | 限制 |
 |-----|------|------|
-| Yahoo Finance | yfinance 封裝 | 可能被限速 |
+| Yahoo Finance | yfinance 封裝（股價、匯率 `USDTWD=X`） | 可能被限速 |
 | CNN Fear & Greed | fear_and_greed 封裝 | 偶爾無法取得 |
 
 ### 檔案系統交互
@@ -337,6 +337,11 @@ Streamlit 單頁應用
 
 ### 加密貨幣代碼轉換
 - yfinance 需要加 `-USD` 後綴 (BTC → BTC-USD)
+
+### 匯率查詢
+- 使用 yfinance 查詢即時匯率：`USDTWD=X` ticker
+- 快取 5 分鐘 (`@st.cache_data(ttl=300)`)
+- 失敗時 fallback 到預設值 `USD_RATE = 31.5`
 
 ### DataFrame 欄位檢查
 - 操作前先檢查欄位是否存在，不存在則初始化預設值
