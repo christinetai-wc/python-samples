@@ -40,7 +40,7 @@ def init_session_state():
     if 'df_plan' not in st.session_state:
         st.session_state.df_plan = pd.DataFrame(columns=['時間', '投資類型', '預計投入(USD)', '匯率'])
     if 'df_allocation' not in st.session_state:
-        st.session_state.df_allocation = pd.DataFrame(columns=['股票代碼', '比重', '公允值(USD)', '邊際1(%)', '邊際2(%)', '邊際3(%)', '邊際4(%)', '邊際5(%)'])
+        st.session_state.df_allocation = pd.DataFrame(columns=['股票代碼', '比重', '公允值(USD)', '邊際1(%)', '邊際2(%)', '邊際3(%)', '邊際4(%)', '邊際5(%)', '邊際1比重(%)', '邊際2比重(%)', '邊際3比重(%)', '邊際4比重(%)', '邊際5比重(%)'])
     if 'df_conservative' not in st.session_state:
         st.session_state.df_conservative = pd.DataFrame({
             '股票代碼': ['VOO'],
@@ -1027,24 +1027,26 @@ if page == "📊 投資總覽":
 
         total_actual = sum([d['actual'] for d in chart_data])
         total_market_value = sum(market_values)
-        total_profit = total_market_value - total_actual
+        stock_profit = total_market_value - total_actual
+        total_profit = stock_profit + opt_total  # 股票報酬 + 選擇權收支
         total_return_rate = (total_profit / total_actual * 100) if total_actual > 0 else 0
 
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("💵 總成本", f"${total_actual:,.0f}")
-        col2.metric("💰 總市值", f"${total_market_value:,.0f}" if total_market_value > 0 else "-")
+        # 執行率 = (總成本 + 被壓住保證金) / 總預算
+        overall_exec_rate = ((total_actual + total_margin) / total_planned * 100) if total_planned > 0 else 0
 
-        # 報酬率顯示
-        if total_return_rate > 0:
-            col3.metric("📈 總報酬率", f"+{total_return_rate:.1f}%", delta=f"${total_profit:,.0f}")
-        elif total_return_rate < 0:
-            col3.metric("📉 總報酬率", f"{total_return_rate:.1f}%", delta=f"${total_profit:,.0f}")
-        else:
-            col3.metric("📊 總報酬率", "0%", delta="$0")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("📋 總預算", f"${total_planned:,.0f}")
+        col2.metric("💵 總成本", f"${total_actual:,.0f}")
+        col3.metric("💰 總市值", f"${total_market_value:,.0f}" if total_market_value > 0 else "-")
+
+        # 總報酬率：股票報酬 + 選擇權收支
+        delta_str = f"{total_return_rate:+.1f}%"
+        col4.metric("📈 總報酬率", f"${total_profit:,.0f}", delta=delta_str)
+        st.caption(f"股票損益: ${stock_profit:,.0f} + 選擇權收支: ${opt_total:,.0f}")
 
         # 執行率
-        overall_exec_rate = (total_actual / total_planned * 100) if total_planned > 0 else 0
-        col4.metric("🎯 執行率", f"{overall_exec_rate:.1f}%", delta=f"預計: ${total_planned:,.0f}")
+        col5.metric("🎯 執行率", f"{overall_exec_rate:.1f}%")
+        st.progress(min(overall_exec_rate / 100, 1.0), text=f"執行率: {overall_exec_rate:.0f}% (成本 ${total_actual:,.0f} + 保證金 ${total_margin:,.0f}) / 預算 ${total_planned:,.0f}")
     
     else:
         st.warning("⚠️ 請先在「投資計畫管理」設定投資計畫")
@@ -1066,8 +1068,6 @@ elif page == "💵 投資計畫管理":
     else:
         # 轉換時間欄位
         df_plan['時間'] = pd.to_datetime(df_plan['時間']).dt.date
-        # 按時間排序
-        df_plan = df_plan.sort_values('時間', ascending=True).reset_index(drop=True)
 
     edited_plan = st.data_editor(df_plan, num_rows="dynamic", use_container_width=True,
         column_config={
@@ -1078,7 +1078,7 @@ elif page == "💵 投資計畫管理":
                 format="$%.2f", min_value=0, required=True),
             "匯率": st.column_config.NumberColumn("匯率(USD→TWD)",
                 format="%.2f", min_value=0, help=f"即時匯率: {get_exchange_rate('USD', 'TWD') or USD_RATE:.2f}")
-        })
+        }, key="plan_editor")
 
     # 自動儲存到 session_state
     edited_plan['時間'] = edited_plan['時間'].astype(str)
@@ -1110,7 +1110,7 @@ elif page == "💵 投資計畫管理":
     
     st.divider()
     st.subheader("🔵 表格2: 進攻型股票配置")
-    st.info("💡 公允值=合理價格 | 邊際1-5=分批買入的價格比例 (例如: 公允值$300, 邊際80%→$240買入)")
+    st.info("💡 公允值=合理價格 | 邊際1-5=分批買入的價格比例 (例如: 公允值$300, 邊際80%→$240買入) | 比重1-5=每檔買入的資金比重")
     
     if df_allocation.empty:
         df_allocation = pd.DataFrame({
@@ -1121,20 +1121,30 @@ elif page == "💵 投資計畫管理":
             '邊際2(%)': [93.0],
             '邊際3(%)': [80.0],
             '邊際4(%)': [70.0],
-            '邊際5(%)': [50.0]
+            '邊際5(%)': [50.0],
+            '邊際1比重(%)': [30.0],
+            '邊際2比重(%)': [30.0],
+            '邊際3比重(%)': [10.0],
+            '邊際4比重(%)': [10.0],
+            '邊際5比重(%)': [20.0]
         })
 
     edited_alloc = st.data_editor(df_allocation, num_rows="dynamic", use_container_width=True,
         column_config={
             "股票代碼": st.column_config.TextColumn("代碼", required=True),
-            "比重": st.column_config.NumberColumn("比重(%)", format="%.0f", required=True),
-            "公允值(USD)": st.column_config.NumberColumn("公允值", format="$%.0f"),
-            "邊際1(%)": st.column_config.NumberColumn("邊際1", format="%.0f%%"),
-            "邊際2(%)": st.column_config.NumberColumn("邊際2", format="%.0f%%"),
-            "邊際3(%)": st.column_config.NumberColumn("邊際3", format="%.0f%%"),
-            "邊際4(%)": st.column_config.NumberColumn("邊際4", format="%.0f%%"),
-            "邊際5(%)": st.column_config.NumberColumn("邊際5", format="%.0f%%")
-        })
+            "比重": st.column_config.NumberColumn("比重(%)", format="%.0f", required=True, default=0.0),
+            "公允值(USD)": st.column_config.NumberColumn("公允值", format="$%.0f", default=0.0),
+            "邊際1(%)": st.column_config.NumberColumn("邊際1", format="%.0f%%", default=100.0),
+            "邊際2(%)": st.column_config.NumberColumn("邊際2", format="%.0f%%", default=93.0),
+            "邊際3(%)": st.column_config.NumberColumn("邊際3", format="%.0f%%", default=80.0),
+            "邊際4(%)": st.column_config.NumberColumn("邊際4", format="%.0f%%", default=70.0),
+            "邊際5(%)": st.column_config.NumberColumn("邊際5", format="%.0f%%", default=50.0),
+            "邊際1比重(%)": st.column_config.NumberColumn("比重1", format="%.0f%%", default=30.0),
+            "邊際2比重(%)": st.column_config.NumberColumn("比重2", format="%.0f%%", default=30.0),
+            "邊際3比重(%)": st.column_config.NumberColumn("比重3", format="%.0f%%", default=10.0),
+            "邊際4比重(%)": st.column_config.NumberColumn("比重4", format="%.0f%%", default=10.0),
+            "邊際5比重(%)": st.column_config.NumberColumn("比重5", format="%.0f%%", default=20.0)
+        }, key="allocation_editor")
 
     total_weight = edited_alloc['比重'].sum()
     if total_weight != 100:
@@ -1252,9 +1262,6 @@ elif page == "📈 股票交易記錄":
         df_stock['交易稅(USD)'].fillna(0.0, inplace=True)
         df_stock['用途說明'].fillna('', inplace=True)
         df_stock['備註'].fillna('', inplace=True)
-        # 按交易日期排序
-        df_stock = df_stock.sort_values('交易日期', ascending=True).reset_index(drop=True)
-
     edited_stock = st.data_editor(df_stock, num_rows="dynamic", use_container_width=True,
         column_config={
             "交易日期": st.column_config.DateColumn("日期", required=True),
@@ -1401,9 +1408,6 @@ elif page == "🎯 選擇權交易記錄":
             df_option['保證金(USD)'] = 0.0
         if '買賣方向' not in df_option.columns:
             df_option['買賣方向'] = '賣出'
-        # 按交易日期排序
-        df_option = df_option.sort_values('交易日期', ascending=True).reset_index(drop=True)
-
     edited_option = st.data_editor(df_option, num_rows="dynamic", use_container_width=True,
         column_config={
             "交易日期": st.column_config.DateColumn("日期", required=True),
