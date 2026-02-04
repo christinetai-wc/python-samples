@@ -20,7 +20,7 @@
 
 ### 3. 股票交易記錄
 - 記錄買進/賣出交易
-- 自動計算手續費（0.1425%）和交易稅（賣出 0.3%）
+- 使用 Firstrade 券商（免手續費、免交易稅）
 - 按日期排序顯示
 - 交易統計（總買入/賣出金額）
 
@@ -95,7 +95,7 @@ Streamlit 單頁應用
 |-----|------|
 | 初始化區 | 導入套件、設定常數、初始化 session_state |
 | 資料載入/儲存 | load_from_folder, load_from_uploaded_files, save_to_folder, export_all_to_zip |
-| 計算函數 | calculate_actual_investment, calculate_option_margin, calculate_holdings, calculate_market_value |
+| 計算函數 | calculate_actual_investment, calculate_sell_proceeds, calculate_option_margin, calculate_holdings, calculate_market_value |
 | 驗證函數 | check_monthly_conservative_plan, check_conservative_monthly_limit, check_lottery_ratio |
 | 外部 API | get_fear_greed_index, get_current_price, get_exchange_rate |
 | 頁面渲染 | 各功能頁面的 UI 邏輯 |
@@ -107,7 +107,7 @@ Streamlit 單頁應用
 ### 1. 實際投資金額計算
 ```
 實際投入 = Σ (買進股數 × 成交價格 + 手續費)
-手續費預設 = 交易額 × 0.1425%
+手續費預設 = 0（Firstrade 免手續費）
 ```
 
 ### 2. 選擇權保證金計算
@@ -127,14 +127,21 @@ Streamlit 單頁應用
 
 ### 5. 報酬率計算
 ```
-股票報酬率 = (市值 - 成本) / 成本 × 100%
+總成本 = 持有中股票的買入成本（不含已賣出的）
+未實現損益 = 目前市值 - 總成本
+已實現損益 = 賣出收入 - 已賣出股票的買入成本
+  賣出收入 = Σ (賣出股數 × 成交價格 - 手續費 - 交易稅)
+  已全部賣出的股票不顯示在圖表中，但其已實現損益納入總計
+股票損益 = 未實現損益 + 已實現損益
+股票報酬率 = 股票損益 / 總成本 × 100%
 選擇權報酬率 = 選擇權收支 / 被壓住保證金 × 100%
 總報酬率 = (股票損益 + 選擇權收支) / 總成本 × 100%
 ```
 
 ### 6. 執行率計算
 ```
-執行率 = (總成本 + 被壓住保證金) / 總預算 × 100%
+執行率 = (持有成本 + 被壓住保證金) / 總預算 × 100%
+持有成本 = 持有中股票的買入成本（不含已賣出）
 總預算 = 投資計畫的預計投入總金額
 ```
 
@@ -282,7 +289,7 @@ Streamlit 單頁應用
 
 ### 技術債
 1. **重複計算邏輯**：多處重複的報酬率計算可抽取為共用函數
-2. **魔術數字**：手續費率 0.001425、稅率 0.003 應抽為常數
+2. **手續費/稅率**：目前使用 Firstrade 免手續費設定，預設值皆為 0
 3. **日期處理散落各處**：應統一在載入/儲存層處理
 
 ### 改進建議
@@ -348,6 +355,7 @@ Streamlit 單頁應用
 ### Plotly 圖表 Hover 提示
 - 使用 `customdata` 和 `hovertemplate='%{customdata}<extra></extra>'` 自訂提示內容
 - 支援 HTML 格式 (`<b>`, `<br>`)
+- 預計投入長條圖 hover 顯示：預計投入金額 + 剩餘金額（預計投入 - 實際買入 - 保證金）
 
 ### 加密貨幣代碼轉換
 - yfinance 需要加 `-USD` 後綴 (BTC → BTC-USD)

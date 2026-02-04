@@ -175,8 +175,33 @@ def calculate_actual_investment(df_stock, category, stock_code=None):
                 shares = abs(row['股數'])
                 price = row['成交價格(USD)']
                 trade_amt = shares * price
-                fee = row['手續費(USD)'] if pd.notna(row['手續費(USD)']) and row['手續費(USD)'] > 0 else trade_amt * 0.001425
+                fee = row['手續費(USD)'] if pd.notna(row['手續費(USD)']) and row['手續費(USD)'] > 0 else 0
                 total += trade_amt + fee
+
+    return total
+
+def calculate_sell_proceeds(df_stock, category=None, stock_code=None):
+    """計算賣出收入（賣出金額 - 手續費 - 交易稅）"""
+    if df_stock.empty:
+        return 0
+
+    filtered = df_stock[df_stock['交易類型'] == '賣出']
+    if category:
+        filtered = filtered[filtered['所屬分類'] == category]
+    if stock_code:
+        filtered = filtered[filtered['股票代碼'] == stock_code]
+
+    if filtered.empty:
+        return 0
+
+    total = 0
+    for _, row in filtered.iterrows():
+        shares = abs(row['股數'])
+        price = row['成交價格(USD)']
+        trade_amt = shares * price
+        fee = row['手續費(USD)'] if pd.notna(row['手續費(USD)']) and row['手續費(USD)'] > 0 else 0
+        tax = row['交易稅(USD)'] if pd.notna(row['交易稅(USD)']) and row['交易稅(USD)'] > 0 else 0
+        total += trade_amt - fee - tax
 
     return total
 
@@ -608,6 +633,11 @@ if page == "📊 投資總覽":
                         # 選擇權保證金（資金來源為此股票）
                         stock_margin, margin_details = calculate_option_margin(df_option, stock_code, return_details=True)
 
+                        # 已全部賣出的股票不顯示在圖表中
+                        holdings = calculate_holdings(df_stock, '進攻型', stock_code)
+                        if stock_actual > 0 and not holdings:
+                            continue
+
                         chart_data.append({
                             'name': stock_code,
                             'type': '進攻型',
@@ -625,6 +655,11 @@ if page == "📊 投資總覽":
 
                         stock_planned = planned * (weight / 100)
                         stock_actual = calculate_actual_investment(df_stock, '保守型', stock_code)
+
+                        # 已全部賣出的股票不顯示在圖表中
+                        holdings = calculate_holdings(df_stock, '保守型', stock_code)
+                        if stock_actual > 0 and not holdings:
+                            continue
 
                         chart_data.append({
                             'name': stock_code,
@@ -652,6 +687,11 @@ if page == "📊 投資總覽":
 
                         stock_planned = planned * (weight / 100)
                         stock_actual = calculate_actual_investment(df_stock, '樂透型', stock_code)
+
+                        # 已全部賣出的股票不顯示在圖表中
+                        holdings = calculate_holdings(df_stock, '樂透型', stock_code)
+                        if stock_actual > 0 and not holdings:
+                            continue
 
                         chart_data.append({
                             'name': stock_code,
@@ -773,6 +813,19 @@ if page == "📊 投資總覽":
             else:
                 margin_hover_texts.append("")
 
+        # 建立預計投入 hover 文字（含剩餘金額）
+        planned_hover_texts = []
+        for i, d in enumerate(chart_data):
+            planned = d['planned']
+            actual = d['actual']
+            margin = d.get('margin', 0)
+            remaining = planned - actual - margin
+            planned_hover_texts.append(
+                f"<b>{d['name']}</b><br>"
+                f"預計投入: ${planned:,.0f}<br>"
+                f"剩餘金額: ${remaining:,.0f}"
+            )
+
         # 使用 Plotly 建立圖表
         fig = go.Figure()
 
@@ -785,7 +838,8 @@ if page == "📊 投資總覽":
             text=[f'${int(v):,}' if v > 0 else '' for v in planned_values],
             textposition='outside',
             textangle=-45,
-            hovertemplate='<b>%{x}</b><br>預計投入: $%{y:,.0f}<extra></extra>',
+            hovertemplate='%{customdata}<extra></extra>',
+            customdata=planned_hover_texts,
             offsetgroup='planned'
         ))
 
@@ -956,18 +1010,22 @@ if page == "📊 投資總覽":
         if aggressive_data:
             with col3:
                 st.write("**🔵 進攻型**")
-                total_agg_actual = sum([d['actual'] for d, _ in aggressive_data])
+                total_agg_held = sum([d['actual'] for d, _ in aggressive_data])
+                total_agg_all_buy = calculate_actual_investment(df_stock, '進攻型')
                 total_agg_mv = sum([market_values[idx] for _, idx in aggressive_data])
+                total_agg_sell = calculate_sell_proceeds(df_stock, '進攻型')
                 total_agg_planned = sum([d['planned'] for d, _ in aggressive_data])
-                total_agg_profit = total_agg_mv - total_agg_actual
-                total_agg_return = (total_agg_profit / total_agg_actual * 100) if total_agg_actual > 0 else 0
-                total_agg_exec = (total_agg_actual / total_agg_planned * 100) if total_agg_planned > 0 else 0
+                agg_unrealized = total_agg_mv - total_agg_held
+                agg_realized = total_agg_sell - (total_agg_all_buy - total_agg_held)
+                total_agg_profit = agg_unrealized + agg_realized
+                total_agg_return = (total_agg_profit / total_agg_held * 100) if total_agg_held > 0 else 0
+                total_agg_exec = (total_agg_held / total_agg_planned * 100) if total_agg_planned > 0 else 0
 
                 # 使用 st.metric 原生箭頭：正數綠色向上、負數紅色向下
                 delta_str = f"{total_agg_return:+.1f}%"
 
-                st.metric("總計", f"${total_agg_mv:,.0f}" if total_agg_mv > 0 else f"${total_agg_actual:,.0f}", delta=delta_str)
-                st.caption(f"成本: ${total_agg_actual:,.0f} | 損益: ${total_agg_profit:,.0f}")
+                st.metric("總計", f"${total_agg_mv:,.0f}" if total_agg_mv > 0 else f"${total_agg_held:,.0f}", delta=delta_str)
+                st.caption(f"成本: ${total_agg_held:,.0f} | 損益: ${total_agg_profit:,.0f}")
                 st.progress(min(total_agg_exec / 100, 1.0), text=f"完成率: {total_agg_exec:.0f}%")
 
         # 進攻型各股明細
@@ -1025,28 +1083,43 @@ if page == "📊 投資總覽":
         st.divider()
         st.subheader("📊 投資組合總覽")
 
-        total_actual = sum([d['actual'] for d in chart_data])
+        # 持有中成本（不含已賣出）
+        total_held_cost = sum([d['actual'] for d in chart_data])
+        # 所有買入成本（含已賣出）
+        total_all_buy = calculate_actual_investment(df_stock, '保守型') + \
+                        calculate_actual_investment(df_stock, '進攻型') + \
+                        calculate_actual_investment(df_stock, '樂透型')
+        # 已賣出股票的買入成本
+        sold_cost = total_all_buy - total_held_cost
+        # 賣出收入
+        total_sell = calculate_sell_proceeds(df_stock)
+        # 持有中的市值
         total_market_value = sum(market_values)
-        stock_profit = total_market_value - total_actual
+        # 未實現損益 = 市值 - 持有成本
+        unrealized_profit = total_market_value - total_held_cost
+        # 已實現損益 = 賣出收入 - 已賣出股票的買入成本
+        realized_profit = total_sell - sold_cost
+        # 股票損益 = 未實現 + 已實現
+        stock_profit = unrealized_profit + realized_profit
         total_profit = stock_profit + opt_total  # 股票報酬 + 選擇權收支
-        total_return_rate = (total_profit / total_actual * 100) if total_actual > 0 else 0
+        total_return_rate = (total_profit / total_held_cost * 100) if total_held_cost > 0 else 0
 
-        # 執行率 = (總成本 + 被壓住保證金) / 總預算
-        overall_exec_rate = ((total_actual + total_margin) / total_planned * 100) if total_planned > 0 else 0
+        # 執行率 = (持有成本 + 被壓住保證金) / 總預算
+        overall_exec_rate = ((total_held_cost + total_margin) / total_planned * 100) if total_planned > 0 else 0
 
         col1, col2, col3, col4, col5 = st.columns(5)
         col1.metric("📋 總預算", f"${total_planned:,.0f}")
-        col2.metric("💵 總成本", f"${total_actual:,.0f}")
+        col2.metric("💵 總成本", f"${total_held_cost:,.0f}")
         col3.metric("💰 總市值", f"${total_market_value:,.0f}" if total_market_value > 0 else "-")
 
         # 總報酬率：股票報酬 + 選擇權收支
         delta_str = f"{total_return_rate:+.1f}%"
         col4.metric("📈 總報酬率", f"${total_profit:,.0f}", delta=delta_str)
-        st.caption(f"股票損益: ${stock_profit:,.0f} + 選擇權收支: ${opt_total:,.0f}")
+        st.caption(f"未實現: ${unrealized_profit:,.0f} (市值-成本) + 已實現: ${realized_profit:,.0f} (賣出-成本) + 選擇權: ${opt_total:,.0f}")
 
         # 執行率
         col5.metric("🎯 執行率", f"{overall_exec_rate:.1f}%")
-        st.progress(min(overall_exec_rate / 100, 1.0), text=f"執行率: {overall_exec_rate:.0f}% (成本 ${total_actual:,.0f} + 保證金 ${total_margin:,.0f}) / 預算 ${total_planned:,.0f}")
+        st.progress(min(overall_exec_rate / 100, 1.0), text=f"執行率: {overall_exec_rate:.0f}% (成本 ${total_held_cost:,.0f} + 保證金 ${total_margin:,.0f}) / 預算 ${total_planned:,.0f}")
     
     else:
         st.warning("⚠️ 請先在「投資計畫管理」設定投資計畫")
@@ -1270,10 +1343,10 @@ elif page == "📈 股票交易記錄":
             "股票代碼": st.column_config.TextColumn("代碼", required=True),
             "股數": st.column_config.NumberColumn("股數", format="%.4f", required=True),
             "成交價格(USD)": st.column_config.NumberColumn("價格", format="$%.2f", required=True),
-            "手續費(USD)": st.column_config.NumberColumn("手續費", format="$%.2f", 
-                help="空白則自動計算(交易額×0.1425%)"),
+            "手續費(USD)": st.column_config.NumberColumn("手續費", format="$%.2f",
+                help="Firstrade 免手續費，預設為 0"),
             "交易稅(USD)": st.column_config.NumberColumn("稅", format="$%.2f",
-                help="空白則自動計算(賣出時為交易額×0.3%)"),
+                help="Firstrade 免交易稅，預設為 0"),
             "用途說明": st.column_config.TextColumn("用途"),
             "備註": st.column_config.TextColumn("備註")
         }, key="stock_editor")
@@ -1289,12 +1362,12 @@ elif page == "📈 股票交易記錄":
             
             trade_amt = shares * price
             
-            # 手續費: 如果為0或空,使用預設
-            fee = row['手續費(USD)'] if pd.notna(row['手續費(USD)']) and row['手續費(USD)'] > 0 else trade_amt * 0.001425
-            
-            # 交易稅: 如果為0或空且是賣出,使用預設
+            # 手續費: Firstrade 免手續費，預設為 0
+            fee = row['手續費(USD)'] if pd.notna(row['手續費(USD)']) and row['手續費(USD)'] > 0 else 0
+
+            # 交易稅: Firstrade 免交易稅，預設為 0
             if t_type == '賣出':
-                tax = row['交易稅(USD)'] if pd.notna(row['交易稅(USD)']) and row['交易稅(USD)'] > 0 else trade_amt * 0.003
+                tax = row['交易稅(USD)'] if pd.notna(row['交易稅(USD)']) and row['交易稅(USD)'] > 0 else 0
             else:
                 tax = 0
             
@@ -1328,14 +1401,14 @@ elif page == "📈 股票交易記錄":
         price = row['成交價格(USD)']
         trade_amt = shares * price
 
-        # 手續費預設值
-        if pd.isna(row['手續費(USD)']) or row['手續費(USD)'] == 0:
-            edited_stock.at[idx, '手續費(USD)'] = trade_amt * 0.001425
+        # 手續費預設值（Firstrade 免手續費）
+        if pd.isna(row['手續費(USD)']):
+            edited_stock.at[idx, '手續費(USD)'] = 0
 
-        # 交易稅預設值
+        # 交易稅預設值（Firstrade 免交易稅）
         if row['交易類型'] == '賣出':
-            if pd.isna(row['交易稅(USD)']) or row['交易稅(USD)'] == 0:
-                edited_stock.at[idx, '交易稅(USD)'] = trade_amt * 0.003
+            if pd.isna(row['交易稅(USD)']):
+                edited_stock.at[idx, '交易稅(USD)'] = 0
         else:
             edited_stock.at[idx, '交易稅(USD)'] = 0
 
@@ -1360,12 +1433,12 @@ elif page == "📈 股票交易記錄":
             shares = abs(row['股數'])
             price = row['成交價格(USD)']
             trade_amt = shares * price
-            fee = row['手續費(USD)'] if pd.notna(row['手續費(USD)']) and row['手續費(USD)'] > 0 else trade_amt * 0.001425
+            fee = row['手續費(USD)'] if pd.notna(row['手續費(USD)']) and row['手續費(USD)'] > 0 else 0
             
             if row['交易類型'] == '買進':
                 total_buy += trade_amt + fee
             else:
-                tax = row['交易稅(USD)'] if pd.notna(row['交易稅(USD)']) and row['交易稅(USD)'] > 0 else trade_amt * 0.003
+                tax = row['交易稅(USD)'] if pd.notna(row['交易稅(USD)']) and row['交易稅(USD)'] > 0 else 0
                 total_sell += trade_amt - fee - tax
         
         col1, col2 = st.columns(2)
@@ -1438,8 +1511,9 @@ elif page == "🎯 選擇權交易記錄":
         trade_amt = contracts * premium * 100
         edited_option.at[idx, '交易金額(USD)'] = trade_amt
 
-        if row['手續費(USD)'] == 0:
-            edited_option.at[idx, '手續費(USD)'] = 1.0
+        # Firstrade 選擇權免手續費，保持 0
+        if pd.isna(row['手續費(USD)']):
+            edited_option.at[idx, '手續費(USD)'] = 0
 
         fee = edited_option.at[idx, '手續費(USD)']
         edited_option.at[idx, '總成本(USD)'] = trade_amt + fee
@@ -1468,14 +1542,14 @@ elif page == "📉 數據分析":
             shares = abs(row['股數'])
             price = row['成交價格(USD)']
             trade_amt = shares * price
-            fee = row['手續費(USD)'] if pd.notna(row['手續費(USD)']) and row['手續費(USD)'] > 0 else trade_amt * 0.001425
+            fee = row['手續費(USD)'] if pd.notna(row['手續費(USD)']) and row['手續費(USD)'] > 0 else 0
             tax = 0
             
             if row['交易類型'] == '買進':
                 total_buy_amt += trade_amt
             else:
                 total_sell_amt += trade_amt
-                tax = row['交易稅(USD)'] if pd.notna(row['交易稅(USD)']) and row['交易稅(USD)'] > 0 else trade_amt * 0.003
+                tax = row['交易稅(USD)'] if pd.notna(row['交易稅(USD)']) and row['交易稅(USD)'] > 0 else 0
             
             total_fee += fee
             total_tax += tax
@@ -1498,7 +1572,7 @@ elif page == "📉 數據分析":
                 holdings_dict[code] = {'股數': 0, '總成本': 0}
             
             trade_amt = abs(shares) * price
-            fee = row['手續費(USD)'] if pd.notna(row['手續費(USD)']) and row['手續費(USD)'] > 0 else trade_amt * 0.001425
+            fee = row['手續費(USD)'] if pd.notna(row['手續費(USD)']) and row['手續費(USD)'] > 0 else 0
             
             if t_type == '買進':
                 holdings_dict[code]['股數'] += abs(shares)
