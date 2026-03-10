@@ -1,0 +1,11 @@
+# 個人交易資料
+*.csv
+
+# Streamlit
+.streamlit/
+
+# Python
+__pycache__/
+
+# 其他
+prompts/
