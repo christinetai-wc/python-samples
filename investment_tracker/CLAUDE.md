@@ -1,372 +1,100 @@
 # CLAUDE.md - 投資理財資金分配追蹤系統
 
-## 核心功能
+## 開發指令
+```bash
+streamlit run investment_tracker.py        # 啟動應用
+python -c "import ast; ast.parse(open('investment_tracker.py').read()); print('OK')"  # 語法檢查
+```
 
-### 1. 投資總覽儀表板
-- 顯示 CNN 恐懼貪婪指數（儀表板樣式）
-- 資金分配長條圖（預計投入 vs 實際買入 vs 目前市值）
-- 選擇權保證金堆疊顯示
-- 進攻型股票安全邊際價格標記
-- 報酬率與完成率統計（保守型/樂透型/進攻型）
-- 選擇權收支與被壓住保證金報酬率
-- 投資組合總覽（總預算、總成本、總市值、總報酬率、執行率）
+## 關鍵路徑與常數
+- `investment_tracker.py` — 唯一程式檔，所有邏輯都在這裡
+- `USD_RATE = 31.5` — 預設匯率 fallback
+- `.streamlit/secrets.toml` — Streamlit 設定
+- CSV 檔案：`investment_plan.csv`, `aggressive_allocation.csv`, `conservative_allocation.csv`, `lottery_allocation.csv`, `stock_transactions.csv`, `options_transactions.csv`
 
-### 2. 投資計畫管理
-- 設定三種投資類型（保守型、進攻型、樂透型）的預計投入金額
-- 進攻型股票配置（股票代碼、比重、公允值、五檔安全邊際、五檔邊際比重）
-- 保守型股票配置（ETF 配置）
-- 樂透型股票配置（高風險標的配置）
-- 自動檢查：保守型月度計畫完整性、每月下限、樂透型比例上限
-
-### 3. 股票交易記錄
-- 記錄買進/賣出交易
-- 使用 Firstrade 券商（免手續費、免交易稅）
-- 按日期排序顯示
-- 交易統計（總買入/賣出金額）
-
-### 4. 選擇權交易記錄
-- 記錄選擇權買賣（股票選擇權、指數選擇權）
-- 追蹤保證金與資金來源
-- 自動計算交易金額（口數 × 權利金 × 100）
-
-### 5. 數據分析
-- 總買入/賣出/手續費/稅統計
-- 持倉明細與平均成本計算
-
-### 6. 資料管理
-- 本地模式：從資料夾載入/儲存 CSV
-- 雲端模式：上傳 CSV 或 ZIP 檔案
-- 一鍵匯出所有資料為 ZIP
-
----
+## 模組結構（單檔，依區塊分）
+| 區塊 | 職責 |
+|-----|------|
+| 初始化區 | 導入套件、常數、`init_session_state()` |
+| 計算函數 | `calculate_actual_investment`, `calculate_sell_proceeds`, `calculate_option_margin`, `calculate_option_buy_cost`, `calculate_holdings`, `calculate_market_value` |
+| 外部 API | `get_fear_greed_index`, `get_current_price`, `get_exchange_rate` |
+| 資料載入/儲存 | `load_from_folder`, `load_from_uploaded_files`, `save_to_folder`, `export_all_to_zip` |
+| 頁面渲染 | 5 個功能頁的 UI 邏輯 |
 
 ## 數據模型
 
-### DataFrame 結構
-
-| 檔案名稱 | session_state key | 欄位 |
-|---------|-------------------|------|
-| investment_plan.csv | df_plan | 時間, 投資類型, 預計投入(USD), 匯率 |
+### session_state 對應
+| 檔案 | key | 重要欄位 |
+|-----|-----|---------|
+| investment_plan.csv | df_plan | 時間, 預計投入(USD), 匯率 |
 | aggressive_allocation.csv | df_allocation | 股票代碼, 比重, 公允值(USD), 邊際1-5(%), 邊際1-5比重(%) |
 | conservative_allocation.csv | df_conservative | 股票代碼, 比重, 說明 |
 | lottery_allocation.csv | df_lottery | 股票代碼, 比重, 說明 |
-| stock_transactions.csv | df_stock | 交易日期, 交易類型, 所屬分類, 股票代碼, 股數, 成交價格(USD), 手續費(USD), 交易稅(USD), 用途說明, 備註 |
-| options_transactions.csv | df_option | 交易日期, 商品類型, 標的, 履約價, 到期日, 買賣權, 買賣方向, 口數, 權利金, 交易金額(USD), 手續費(USD), 保證金(USD), 總成本(USD), 資金來源, 策略說明 |
+| stock_transactions.csv | df_stock | 交易日期, 交易類型, 所屬分類, 股票代碼, 股數, 成交價格(USD), 手續費(USD), 交易稅(USD) |
+| options_transactions.csv | df_option | 交易日期, 商品類型, 標的, 履約價, 到期日, 買賣權, 買賣方向, 口數, 權利金, 交易金額(USD), 手續費(USD), 保證金(USD), 資金來源, 策略說明 |
 
-### 投資類型分類
-- **保守型**: 低風險 ETF（如 VOO, VTI）
-- **進攻型**: 個股投資，有安全邊際買入策略
-- **樂透型**: 高風險標的（如加密貨幣），限制總比例 10%
+### 水平配置（horizontal_ratio）
+- `st.session_state.horizontal_ratio` = `{'保守型': 10.0, '樂透型': 10.0, '進攻型': 80.0}`
+- 總預算按此比例分配到三種類型，不需每筆投入指定類型
+- 已實現損益（賣股獲利）加回總預算池：`total_budget = plan_total_raw + realized_profit`
 
----
+## 核心演算法
 
-## 架構設計
-
-### 整體結構
+### 總預算與資金分配
 ```
-Streamlit 單頁應用
-├── 側邊欄
-│   ├── 頁面選擇器（st.sidebar.radio，5 個功能頁全顯示，單選）
-│   ├── 資料管理區（載入/儲存 CSV，僅此處有儲存按鈕）
-│   └── 匯率資訊
-│
-├── 主內容區（根據選擇切換）
-│   ├── 📊 投資總覽
-│   ├── 💵 投資計畫管理
-│   ├── 📈 股票交易記錄
-│   ├── 🎯 選擇權交易記錄
-│   └── 📉 數據分析
-│
-└── 共用函數層
-    ├── 資料載入/儲存
-    ├── 計算邏輯
-    └── 外部 API 整合
+總預算 = Σ 預計投入 + 已實現損益
+各類預算 = 總預算 × 水平比例
+各股預算 = 各類預算 × 股票比重
 ```
 
-### 狀態管理
-- 使用 `st.session_state` 管理所有 DataFrame
-- `FILE_MAPPING` 字典對應檔案名稱與 session_state key
-- `data_loaded` 標記追蹤資料載入狀態
-- `data_folder` 記錄本地資料夾路徑
-- 頁面編輯後自動存入 session_state（無頁面級儲存按鈕），僅側邊欄提供 CSV 儲存功能
-
-### 模組職責
-| 區塊 | 職責 |
-|-----|------|
-| 初始化區 | 導入套件、設定常數、初始化 session_state |
-| 資料載入/儲存 | load_from_folder, load_from_uploaded_files, save_to_folder, export_all_to_zip |
-| 計算函數 | calculate_actual_investment, calculate_sell_proceeds, calculate_option_margin, calculate_holdings, calculate_market_value |
-| 驗證函數 | check_monthly_conservative_plan, check_conservative_monthly_limit, check_lottery_ratio |
-| 外部 API | get_fear_greed_index, get_current_price, get_exchange_rate |
-| 頁面渲染 | 各功能頁面的 UI 邏輯 |
-
----
-
-## 核心演算法 / 邏輯
-
-### 1. 實際投資金額計算
+### 已實現損益（平均成本法）
 ```
-實際投入 = Σ (買進股數 × 成交價格 + 手續費)
-手續費預設 = 0（Firstrade 免手續費）
+已實現損益 = Σ (賣出股數 × 成交價) - Σ (賣出股數 × 平均買入價)
+平均買入價 = 該股總買入成本 / 該股總買入股數
 ```
 
-### 2. 選擇權保證金計算
-- 篩選條件：資金來源 = 指定股票 AND 到期日 >= 今天 AND 買賣方向 = 賣出
-- 保證金歸屬到「資金來源」股票，而非「標的」股票
+### 選擇權歸屬
+- 保證金（賣方）和買方成本都歸屬到「資金來源」欄位指定的股票
+- **資金來源為空時**：按各股票剩餘預算比例自動分攤，可拆分到多檔股票
 
-### 3. 持股數量計算
+### 垂直配置堆疊長條圖（4 層）
 ```
-持股 = Σ 買進股數 - Σ 賣出股數
-```
-
-### 4. 目前市值計算
-```
-市值 = Σ (持股數 × 現價)
-現價來源：yfinance API（5 分鐘快取）
+已買入（藍）+ 賣方保證金（橘）+ 買方成本（紫）+ 待部署（灰）= 該股預算
 ```
 
-### 5. 報酬率計算
-```
-總成本 = 持有中股票的買入成本（不含已賣出的）
-未實現損益 = 目前市值 - 總成本
-已實現損益 = 賣出收入 - 已賣出股票的買入成本
-  賣出收入 = Σ (賣出股數 × 成交價格 - 手續費 - 交易稅)
-  已全部賣出的股票不顯示在圖表中，但其已實現損益納入總計
-股票損益 = 未實現損益 + 已實現損益
-股票報酬率 = 股票損益 / 總成本 × 100%
-選擇權報酬率 = 選擇權收支 / 被壓住保證金 × 100%
-總報酬率 = (股票損益 + 選擇權收支) / 總成本 × 100%
-```
-
-### 6. 執行率計算
+### 執行率
 ```
 執行率 = (持有成本 + 被壓住保證金) / 總預算 × 100%
-持有成本 = 持有中股票的買入成本（不含已賣出）
-總預算 = 投資計畫的預計投入總金額
 ```
 
-### 7. 安全邊際價格
-```
-邊際買入價 = 公允值 × 邊際百分比
-例：公允值 $300, 邊際 80% → 買入價 $240
-```
+## 慣例
+- 所有有時間欄位的表格，按時間升序排序
+- `st.metric` delta 格式：`f"{rate:+.1f}%"`（讓 Streamlit 自動處理顏色箭頭）
+- 加密貨幣代碼：yfinance 需加 `-USD` 後綴
+- 匯率：yfinance `USDTWD=X`，快取 5 分鐘，失敗 fallback `USD_RATE`
+- DataFrame 操作前先檢查欄位是否存在
+- 日期統一用 `pd.to_datetime().dt.date`
+- Plotly hover 用 `customdata` + `hovertemplate`
+- Treemap 用 `sort=False` 保持資料順序（保守→樂透→進攻）
 
-### 8. 邊際比重（買入資金分配）
-```
-邊際1-5比重：每檔邊際價格對應的資金買入比重
-預設值：30% / 30% / 10% / 10% / 20%
-意義：當價格到達各邊際價時，分別投入該比重的資金
-```
+## 交易輸入 UX
+- 使用 `st.form` + `st.dataframe(on_select="rerun", selection_mode="single-row")`
+- 點選下方紀錄可帶入上方表單編輯
+- form key 包含 edit_idx 以重置預設值：`f"stock_form_{edit_idx}"`
 
-### 9. 投資計畫驗證
-- 保守型月度檢查：從 2026/1 起每月需有計畫
-- 保守型下限檢查：每月需 >= $300
-- 樂透型比例檢查：不得超過總投資 10%
+## 地雷
+- `init_session_state()` 的 DataFrame 不能用空的，要帶預設資料（否則 CSV 存不出來）
+- Treemap 預設按 value 大小排序，必須加 `sort=False`
+- Yahoo Finance 可能被限速，需三層 fallback（fast_info → history → info）
+- 舊 CSV 可能有 `投資類型` 欄位，載入時需自動 drop（向後相容）
+- sidebar 儲存按鈕需加唯一 `key`，成功後 `st.rerun()`
+- 圖表 Y 軸需額外 25% 空間避免數字被截斷
 
----
-
-## 設計決策與理由
-
-### 選擇 Streamlit
-- **理由**：快速開發、內建 data_editor 支援表格編輯、部署簡單
-- **替代方案**：Flask + React（開發成本高）、Dash（學習曲線較陡）
-
-### 使用 CSV 作為資料儲存
-- **理由**：簡單、可攜、易於備份、可用 Excel 開啟編輯
-- **替代方案**：SQLite（需額外 ORM）、JSON（不適合表格資料）
-
-### session_state 管理狀態
-- **理由**：Streamlit 原生支援、頁面刷新保持狀態
-- **替代方案**：外部資料庫（增加複雜度）
-
-### yfinance 取得股價
-- **理由**：免費、支援美股和加密貨幣
-- **限制**：可能被限速
-- **替代方案**：Alpha Vantage、IEX Cloud（需 API Key）
-
-### 三種投資類型設計
-- **理由**：符合資產配置原則（穩定/成長/投機）
-- **進攻型特殊處理**：需要安全邊際買入策略
-
-### 選擇權保證金歸屬於「資金來源」
-- **理由**：反映資金實際被佔用的股票部位
-- **hover 顯示「標的」**：讓使用者知道保證金綁定的選擇權合約
-
----
-
-## 邊界情況處理
-
-### 空資料處理
-- DataFrame 為空時顯示預設範例資料
-- 計算函數檢查 `df.empty` 後返回 0 或空 dict
-
-### 欄位不存在處理
-- 使用 `if 'column' not in df.columns` 檢查
-- 自動補充預設欄位（如保證金、買賣方向）
-
-### 外部 API 失敗
-- yfinance：三層 fallback（fast_info → history → info）
-- fear_and_greed：try-except 包裝，失敗返回 None
-- 顯示警告訊息提示使用者重試
-
-### 日期處理
-- 統一使用 `pd.to_datetime().dt.date` 轉換
-- 儲存時轉為字串，載入時轉回日期
-
-### 數值空值
-- `pd.notna()` 檢查
-- `fillna()` 填充預設值
-
-### 比重驗證
-- 各配置表比重需加總 100%
-- 顯示警告/成功訊息
-
-### 遺漏的邊界情況
-- 未處理網路完全離線的情況
-- 未處理 CSV 編碼錯誤（假設 utf-8-sig）
-- 未處理超大檔案載入
-
----
-
-## 性能考慮
-
-### 快取策略
-- `@st.cache_data(ttl=300)`：股價查詢快取 5 分鐘
-- `@st.cache_resource`：可用於 API client（目前未使用）
-
-### 時間複雜度
-| 操作 | 複雜度 | 說明 |
-|-----|--------|------|
-| 載入 CSV | O(n) | n = 資料列數 |
-| 計算持股 | O(n) | 遍歷所有交易 |
-| 計算市值 | O(m) | m = 持股數，每檔查詢 API |
-| 圖表渲染 | O(k) | k = 投資標的數 |
-
-### 瓶頸
-- **股價查詢**：多檔股票時 API 呼叫次數多
-- **改進方案**：批次查詢、更長快取時間
-
-### 空間複雜度
-- 所有 DataFrame 載入記憶體
-- 對於一般使用者（數百筆交易）無問題
-
----
-
-## 依賴與外部集成
-
-### 核心依賴
-| 套件 | 用途 | 必要性 |
-|-----|------|--------|
-| streamlit | Web 框架 | 必要 |
-| pandas | 資料處理 | 必要 |
-| plotly | 圖表 | 必要 |
-
-### 可選依賴
-| 套件 | 用途 | 缺少時行為 |
-|-----|------|-----------|
-| yfinance | 股價查詢、即時匯率 | 市值顯示為 0，匯率使用預設值 |
-| fear_and_greed | 恐懼貪婪指數 | 不顯示儀表板 |
-
-### 外部 API
-| 服務 | 端點 | 限制 |
+## 依賴
+| 套件 | 用途 | 必要 |
 |-----|------|------|
-| Yahoo Finance | yfinance 封裝（股價、匯率 `USDTWD=X`） | 可能被限速 |
-| CNN Fear & Greed | fear_and_greed 封裝 | 偶爾無法取得 |
-
-### 檔案系統交互
-- 本地資料夾讀寫 CSV
-- ZIP 檔案打包/解壓
-
----
-
-## 已知限制與改進空間
-
-### 功能限制
-1. **無多幣別支援**：目前僅支援 USD
-2. **無歷史績效追蹤**：只有當前快照，無法看歷史變化
-3. **無自動同步**：需手動載入/儲存
-4. **無使用者認證**：單機使用，無多用戶支援
-
-### 技術債
-1. **重複計算邏輯**：多處重複的報酬率計算可抽取為共用函數
-2. **手續費/稅率**：目前使用 Firstrade 免手續費設定，預設值皆為 0
-3. **日期處理散落各處**：應統一在載入/儲存層處理
-
-### 改進建議
-1. **加入資料庫**：SQLite 或 PostgreSQL 支援更複雜查詢
-2. **加入歷史快照**：每日/每週記錄組合狀態
-3. **加入多幣別**：支援 TWD、USD 混合計算
-4. **加入自動更新**：定時重新整理股價
-5. **加入匯出報表**：PDF 或 Excel 報表
-6. **加入單元測試**：目前無測試覆蓋
-
-### 已移除功能
-- **Gemini AI 分析**：因 AI 資料可能過時造成誤導，已移除
-
----
-
-## 踩過的 Bug 與解決方案
-
-### 1. CSV 檔案無法儲存
-**問題**: `conservative_allocation.csv` 和 `lottery_allocation.csv` 無法儲存
-**原因**: `init_session_state()` 中初始化為空的 DataFrame
-**解決**: 改為初始化時帶有預設資料，不要用空 DataFrame
-
-### 2. 圖表數字被截斷
-**問題**: 長條圖上方數字（如 6000）顯示不完全
-**解決**: 增加 Y 軸範圍 25% 空間 (`y_max = max_value * 1.25`)
-
-### 3. 恐懼貪婪指數儀表板只顯示 10
-**問題**: 最高值 100 只看到 10，被截斷
-**解決**:
-- 增加高度從 250 到 300
-- 明確設定 tickvals `[0, 25, 50, 75, 100]`
-- 增加 margins
-
-### 4. Sidebar 儲存按鈕有時無效
-**問題**: 點擊儲存按鈕沒有反應
-**解決**:
-- 加上唯一的 `key` 參數
-- 儲存成功後呼叫 `st.rerun()`
-
-### 5. Yahoo Finance 被限速
-**問題**: 股票現價查詢失敗，市值顯示為 0
-**解決**: 使用多重 fallback 方法 (fast_info → history → info)
-
----
-
-## 開發規則備忘
-
-### 表格排序
-- 所有有時間欄位的表格，預設按時間升序排序
-
-### 報酬率顯示格式
-- 所有 `st.metric` 統一使用原生箭頭（正數綠色向上 ▲、負數紅色向下 ▼）
-- delta 參數格式：`f"{return_rate:+.1f}%"`（不加 emoji，讓 Streamlit 自動處理顏色箭頭）
-
-### 完成率顯示
-- 使用 `st.progress()` 視覺化呈現各類型投資的執行進度
-- 格式：`st.progress(min(exec_rate / 100, 1.0), text=f"完成率: {exec_rate:.0f}%")`
-
-### 進攻型邊際價格顯示
-- 使用文字格式（非表格）
-- 範例：`TSLA: 現價 449.06 | 邊際價: 310.00 / 288.30 / 248.00 / 217.00 / 155.00`
-
-### Plotly 圖表 Hover 提示
-- 使用 `customdata` 和 `hovertemplate='%{customdata}<extra></extra>'` 自訂提示內容
-- 支援 HTML 格式 (`<b>`, `<br>`)
-- 預計投入長條圖 hover 顯示：預計投入金額 + 剩餘金額（預計投入 - 實際買入 - 保證金）
-
-### 加密貨幣代碼轉換
-- yfinance 需要加 `-USD` 後綴 (BTC → BTC-USD)
-
-### 匯率查詢
-- 使用 yfinance 查詢即時匯率：`USDTWD=X` ticker
-- 快取 5 分鐘 (`@st.cache_data(ttl=300)`)
-- 失敗時 fallback 到預設值 `USD_RATE = 31.5`
-
-### DataFrame 欄位檢查
-- 操作前先檢查欄位是否存在，不存在則初始化預設值
-
-### 日期處理
-- 統一使用 `pd.to_datetime().dt.date` 轉換
+| streamlit | Web 框架 | 是 |
+| pandas | 資料處理 | 是 |
+| plotly | 圖表 | 是 |
+| yfinance | 股價/匯率 | 否（fallback 預設值） |
+| fear_and_greed | CNN 恐懼貪婪指數 | 否（不顯示儀表板） |
