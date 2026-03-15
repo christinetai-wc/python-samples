@@ -86,6 +86,16 @@ def load_from_folder(folder_path):
             except Exception as e:
                 pass
 
+    # 載入水平配置比例
+    settings_path = os.path.join(folder_path, 'settings.csv')
+    if os.path.exists(settings_path):
+        try:
+            df_settings = pd.read_csv(settings_path, encoding='utf-8-sig')
+            st.session_state.horizontal_ratio = dict(zip(df_settings['類型'], df_settings['比例']))
+            loaded_files.append('settings.csv')
+        except Exception:
+            pass
+
     if loaded_files:
         st.session_state.data_loaded = True
         return True, f"已載入: {', '.join(loaded_files)}"
@@ -108,6 +118,11 @@ def load_from_uploaded_files(uploaded_files):
                                 df = df.drop(columns=['投資類型'])
                             st.session_state[FILE_MAPPING[zip_filename]] = df
                             loaded_files.append(zip_filename)
+                    elif zip_filename == 'settings.csv':
+                        with zip_ref.open(zip_filename) as f:
+                            df_settings = pd.read_csv(f, encoding='utf-8-sig')
+                            st.session_state.horizontal_ratio = dict(zip(df_settings['類型'], df_settings['比例']))
+                            loaded_files.append('settings.csv')
         # 處理 CSV 檔案
         elif filename in FILE_MAPPING:
             df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
@@ -130,6 +145,13 @@ def export_all_to_zip():
                 csv_buffer = io.StringIO()
                 st.session_state[state_key].to_csv(csv_buffer, index=False, encoding='utf-8-sig')
                 zip_file.writestr(filename, csv_buffer.getvalue().encode('utf-8-sig'))
+        # 匯出水平配置比例
+        if 'horizontal_ratio' in st.session_state:
+            h = st.session_state.horizontal_ratio
+            df_settings = pd.DataFrame({'類型': h.keys(), '比例': h.values()})
+            csv_buf = io.StringIO()
+            df_settings.to_csv(csv_buf, index=False, encoding='utf-8-sig')
+            zip_file.writestr('settings.csv', csv_buf.getvalue().encode('utf-8-sig'))
     zip_buffer.seek(0)
     return zip_buffer
 
@@ -144,6 +166,14 @@ def save_to_folder(folder_path):
             file_path = os.path.join(folder_path, filename)
             st.session_state[state_key].to_csv(file_path, index=False, encoding='utf-8-sig')
             saved_files.append(filename)
+
+    # 儲存水平配置比例
+    if 'horizontal_ratio' in st.session_state:
+        h = st.session_state.horizontal_ratio
+        df_settings = pd.DataFrame({'類型': h.keys(), '比例': h.values()})
+        settings_path = os.path.join(folder_path, 'settings.csv')
+        df_settings.to_csv(settings_path, index=False, encoding='utf-8-sig')
+        saved_files.append('settings.csv')
 
     if saved_files:
         return True, f"已儲存: {', '.join(saved_files)}"
@@ -742,6 +772,7 @@ if page == "📊 投資總覽":
         tree_values = []
         tree_colors = []
         tree_hovers = []
+        tree_texts = []
 
         for t in ['保守型', '樂透型', '進攻型']:
             if t not in type_groups:
@@ -751,40 +782,60 @@ if page == "📊 投資總覽":
             type_label = f"{type_icons.get(t, '')} {t} ({pct:.0f}%)"
             base_color = type_color_map.get(t, '#95a5a6')
 
+            # 類型層：計算該類型整體損益
+            type_pnl = info['mv'] - info['actual'] if info['actual'] > 0 and info['mv'] > 0 else 0
+            type_pnl_pct = (type_pnl / info['actual'] * 100) if info['actual'] > 0 else 0
+
             tree_labels.append(type_label)
             tree_parents.append('')
             tree_values.append(0)
             tree_colors.append(base_color)
-            tree_hovers.append(
+            type_hover = (
                 f"<b>{t}</b><br>"
                 f"預算: ${info['planned']:,.0f} ({pct:.0f}%)<br>"
                 f"已投入: ${info['actual']:,.0f}<br>"
                 f"市值: ${info['mv']:,.0f}"
             )
+            if info['actual'] > 0 and info['mv'] > 0:
+                type_hover += f"<br>損益: ${type_pnl:+,.0f} ({type_pnl_pct:+.1f}%)"
+            tree_hovers.append(type_hover)
+            tree_texts.append('')  # 類型層用預設 label
 
             for d, idx in info['items']:
                 mv = market_values[idx]
                 margin = d.get('margin', 0)
                 buy_cost = d.get('buy_cost', 0)
                 remaining = d['planned'] - d['actual'] - margin - buy_cost
+                cost = d['actual']
+
+                # 損益計算
+                if cost > 0 and mv > 0:
+                    item_pnl = mv - cost
+                    item_pnl_pct = (item_pnl / cost) * 100
+                    pnl_text = f"<br>${item_pnl:+,.0f} ({item_pnl_pct:+.1f}%)"
+                else:
+                    item_pnl = 0
+                    item_pnl_pct = 0
+                    pnl_text = ''
 
                 tree_labels.append(d['name'])
                 tree_parents.append(type_label)
                 tree_values.append(max(d['planned'], 1))
                 tree_colors.append(base_color)
+                tree_texts.append(pnl_text)
 
                 hover_lines = [f"<b>{d['name']}</b>"]
                 hover_lines.append(f"預算: ${d['planned']:,.0f}")
-                if d['actual'] > 0:
-                    hover_lines.append(f"已買入: ${d['actual']:,.0f}")
+                if cost > 0:
+                    hover_lines.append(f"已買入: ${cost:,.0f}")
                 if margin > 0:
                     hover_lines.append(f"賣方保證金: ${margin:,.0f}")
                 if buy_cost > 0:
                     hover_lines.append(f"買方成本: ${buy_cost:,.0f}")
                 hover_lines.append(f"待部署: ${max(remaining, 0):,.0f}")
                 if mv > 0:
-                    pnl = mv - d['actual']
-                    hover_lines.append(f"市值: ${mv:,.0f} ({pnl:+,.0f})")
+                    hover_lines.append(f"市值: ${mv:,.0f} ({item_pnl:+,.0f})")
+                    hover_lines.append(f"報酬率: {item_pnl_pct:+.1f}%")
                 tree_hovers.append("<br>".join(hover_lines))
 
         fig_tree = go.Figure(go.Treemap(
@@ -797,8 +848,8 @@ if page == "📊 投資總覽":
             ),
             hovertemplate='%{customdata}<extra></extra>',
             customdata=tree_hovers,
-            textinfo='label+value',
-            texttemplate='%{label}<br>$%{value:,.0f}',
+            textinfo='label+value+text',
+            texttemplate='%{label}<br>$%{value:,.0f}%{text}',
             branchvalues='remainder',
             tiling=dict(packing='dice'),
             sort=False
@@ -809,7 +860,7 @@ if page == "📊 投資總覽":
         # ===== 垂直配置：分批買入進度 =====
         if chart_data:
             st.markdown("#### 垂直配置：分批買入進度")
-            st.caption("藍色=已買入 | 橘色=賣方保證金 | 紫色=買方成本 | 灰色=待部署 | 紅框=邊際買入價")
+            st.caption("藍色=已買入 | 橘色=賣方保證金 | 紫色=買方成本 | 灰色=待部署 | ◆=市值 | 紅框=邊際買入價")
 
             bar_names = []
             bar_bought = []
@@ -949,6 +1000,49 @@ if page == "📊 投資總覽":
                 customdata=remain_hovers
             ))
 
+            # 市值標記（未實現損益）
+            mv_y = []
+            mv_colors = []
+            mv_hovers = []
+            has_mv = False
+            for i, s in enumerate(bar_names):
+                orig_i = bar_idx_map[i]
+                mv = market_values[orig_i]
+                cost = bar_bought[i]
+                if mv > 0 and cost > 0:
+                    has_mv = True
+                    mv_y.append(mv)
+                    pnl = mv - cost
+                    pnl_pct = (pnl / cost) * 100
+                    color = '#10b981' if pnl >= 0 else '#ef4444'
+                    mv_colors.append(color)
+                    mv_hovers.append(
+                        f"<b>{s} 市值</b><br>"
+                        f"市值: ${mv:,.0f}<br>"
+                        f"成本: ${cost:,.0f}<br>"
+                        f"損益: ${pnl:+,.0f} ({pnl_pct:+.1f}%)"
+                    )
+                else:
+                    mv_y.append(None)
+                    mv_colors.append('#94a3b8')
+                    mv_hovers.append('')
+
+            if has_mv:
+                fig_vert.add_trace(go.Scatter(
+                    name='市值',
+                    x=bar_names,
+                    y=mv_y,
+                    mode='markers',
+                    marker=dict(
+                        symbol='diamond',
+                        size=12,
+                        color=mv_colors,
+                        line=dict(width=2, color='white')
+                    ),
+                    hovertemplate='%{customdata}<extra></extra>',
+                    customdata=mv_hovers
+                ))
+
             # 進攻型邊際價格標注
             for i, s in enumerate(bar_names):
                 for tier in bar_tier_info[i]:
@@ -962,7 +1056,8 @@ if page == "📊 投資總覽":
                         xshift=0, yshift=8
                     )
 
-            max_budget = max([d['planned'] for d in chart_data]) if chart_data else 0
+            max_mv = max([v for v in mv_y if v is not None], default=0) if has_mv else 0
+            max_budget = max(max([d['planned'] for d in chart_data]) if chart_data else 0, max_mv)
             fig_vert.update_layout(
                 barmode='stack',
                 xaxis_title='股票',
