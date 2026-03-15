@@ -306,6 +306,66 @@ def calculate_option_margin(df_option, stock_code, return_details=False):
         return total
     return (0, []) if return_details else 0
 
+# 計算選擇權未實現損益
+def calculate_options_unrealized_pnl(df_option):
+    """計算未到期選擇權部位的未實現損益"""
+    if df_option is None or df_option.empty:
+        return 0, []
+
+    df_calc = df_option.copy()
+    if '到期日' not in df_calc.columns:
+        return 0, []
+
+    df_calc['到期日'] = pd.to_datetime(df_calc['到期日'])
+    today = pd.Timestamp(datetime.now().date())
+    active = df_calc[df_calc['到期日'] >= today]
+
+    if active.empty:
+        return 0, []
+
+    total_unrealized = 0
+    details = []
+
+    for idx, row in active.iterrows():
+        ticker = row.get('標的', '')
+        strike = row.get('履約價', 0)
+        expiry = row['到期日']
+        cp = row.get('買賣權', '')
+        direction = row.get('買賣方向', '')
+        contracts = row.get('口數', 0)
+        trade_amt = row.get('交易金額(USD)', 0)
+
+        # 將買賣權轉為 yfinance 格式
+        opt_type = 'Call' if 'Call' in str(cp) or 'call' in str(cp) or cp == '買權' else 'Put'
+        expiry_str = expiry.strftime('%Y-%m-%d')
+
+        current_price = get_option_price(ticker, expiry_str, strike, opt_type)
+
+        unrealized = 0
+        if current_price is not None:
+            market_value = current_price * contracts * 100
+            if direction == '賣出':
+                # 賣方：收到的權利金 - 平倉成本
+                unrealized = trade_amt - market_value
+            else:
+                # 買方：現在市值 - 付出的權利金
+                unrealized = market_value - trade_amt
+            total_unrealized += unrealized
+
+        details.append({
+            '標的': ticker,
+            '買賣權': cp,
+            '買賣方向': direction,
+            '履約價': strike,
+            '到期日': expiry_str,
+            '口數': contracts,
+            '交易金額': trade_amt,
+            '現價': current_price,
+            '未實現損益': unrealized,
+        })
+
+    return total_unrealized, details
+
 # 取得股票現價
 @st.cache_data(ttl=300)  # 快取5分鐘
 def get_current_price(ticker):
@@ -345,6 +405,33 @@ def get_current_price(ticker):
         except:
             pass
 
+        return None
+    except:
+        return None
+
+# 取得選擇權現價
+@st.cache_data(ttl=300)
+def get_option_price(ticker, expiry_str, strike, option_type):
+    """使用 yfinance 取得選擇權現價"""
+    if not YFINANCE_AVAILABLE:
+        return None
+    try:
+        stock = yf.Ticker(ticker)
+        chain = stock.option_chain(expiry_str)
+        df = chain.calls if option_type == 'Call' else chain.puts
+        if df.empty:
+            return None
+        match = df[abs(df['strike'] - strike) < 0.01]
+        if match.empty:
+            return None
+        row = match.iloc[0]
+        price = row.get('lastPrice')
+        if price and price > 0:
+            return float(price)
+        bid = row.get('bid', 0) or 0
+        ask = row.get('ask', 0) or 0
+        if bid > 0 or ask > 0:
+            return float((bid + ask) / 2)
         return None
     except:
         return None
@@ -1092,16 +1179,23 @@ if page == "📊 投資總覽":
         # 詳細數據表格
         st.subheader("📋 詳細數據")
 
-        # 計算選擇權收入（提前計算用於佔比）
+        # 計算選擇權損益（區分已實現/未實現）
+        opt_realized = 0
+        opt_unrealized = 0
+        opt_unrealized_details = []
         if not df_option.empty:
-            if '收支金額(USD)' in df_option.columns:
-                opt_total = df_option['收支金額(USD)'].sum()
-            elif '總成本(USD)' in df_option.columns:
-                opt_total = df_option['總成本(USD)'].sum()
-            else:
-                opt_total = 0
-        else:
-            opt_total = 0
+            df_opt_calc = df_option.copy()
+            if '到期日' in df_opt_calc.columns and '收支金額(USD)' in df_opt_calc.columns:
+                df_opt_calc['到期日'] = pd.to_datetime(df_opt_calc['到期日'])
+                today = pd.Timestamp(datetime.now().date())
+                expired = df_opt_calc[df_opt_calc['到期日'] < today]
+                opt_realized = expired['收支金額(USD)'].sum() if not expired.empty else 0
+                opt_unrealized, opt_unrealized_details = calculate_options_unrealized_pnl(df_option)
+            elif '收支金額(USD)' in df_opt_calc.columns:
+                opt_realized = df_opt_calc['收支金額(USD)'].sum()
+            elif '總成本(USD)' in df_opt_calc.columns:
+                opt_realized = df_opt_calc['總成本(USD)'].sum()
+        opt_total = opt_realized + opt_unrealized
 
         # 計算全部資金（預計投入 + 選擇權收入）用於佔比計算
         total_planned = sum([d['planned'] for d in chart_data])
@@ -1231,14 +1325,16 @@ if page == "📊 投資總覽":
             opt_return_rate = 0
             opt_return_str = "-"
 
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("選擇權收支", f"${opt_total:,.2f}")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("已實現損益", f"${opt_realized:,.2f}")
+        opt_unrealized_delta = f"{opt_unrealized:+,.2f}" if opt_unrealized != 0 else None
+        col2.metric("未實現損益", f"${opt_unrealized:,.2f}", delta=opt_unrealized_delta)
         if total_margin > 0:
-            col2.metric("🔒 賣方保證金", f"${total_margin:,.0f}")
+            col3.metric("🔒 賣方保證金", f"${total_margin:,.0f}")
         if buy_cost > 0:
-            col3.metric("🔵 買方成本", f"${buy_cost:,.0f}")
+            col4.metric("🔵 買方成本", f"${buy_cost:,.0f}")
         if total_margin > 0:
-            col4.metric("報酬率", opt_return_str)
+            col5.metric("報酬率", opt_return_str)
 
         # 未到期部位明細
         if not active_options.empty:
@@ -1246,6 +1342,25 @@ if page == "📊 投資總覽":
             display_cols = ['標的', '買賣權', '買賣方向', '履約價', '到期日', '口數', '權利金', '保證金(USD)', '資金來源']
             display_active = active_options[[c for c in display_cols if c in active_options.columns]].copy()
             display_active['到期日'] = display_active['到期日'].dt.strftime('%Y-%m-%d')
+            # 加入現價和未實現損益欄位
+            if opt_unrealized_details:
+                details_map = {}
+                for d in opt_unrealized_details:
+                    key = (d['標的'], d['履約價'], d['到期日'], d['買賣方向'])
+                    details_map[key] = d
+                current_prices = []
+                unrealized_pnls = []
+                for _, row in display_active.iterrows():
+                    key = (row.get('標的', ''), row.get('履約價', 0), row.get('到期日', ''), row.get('買賣方向', ''))
+                    detail = details_map.get(key)
+                    if detail and detail['現價'] is not None:
+                        current_prices.append(f"${detail['現價']:.2f}")
+                        unrealized_pnls.append(f"${detail['未實現損益']:,.2f}")
+                    else:
+                        current_prices.append('-')
+                        unrealized_pnls.append('-')
+                display_active['現價'] = current_prices
+                display_active['未實現損益'] = unrealized_pnls
             st.dataframe(display_active, use_container_width=True, hide_index=True)
 
         # 總計
@@ -1280,7 +1395,11 @@ if page == "📊 投資總覽":
         # 總報酬率：股票報酬 + 選擇權收支
         delta_str = f"{total_return_rate:+.1f}%"
         col4.metric("📈 總報酬率", f"${total_profit:,.0f}", delta=delta_str)
-        st.caption(f"未實現: ${unrealized_profit:,.0f} (市值-成本) + 已實現: ${realized_profit:,.0f} (賣出-成本) + 選擇權: ${opt_total:,.0f}")
+        stock_unrealized_str = f"${unrealized_profit:,.0f}"
+        opt_unrealized_str = f"${opt_unrealized:,.0f}"
+        stock_realized_str = f"${realized_profit:,.0f}"
+        opt_realized_str = f"${opt_realized:,.0f}"
+        st.caption(f"未實現: 股票 {stock_unrealized_str} + 選擇權 {opt_unrealized_str} | 已實現: 股票 {stock_realized_str} + 選擇權 {opt_realized_str}")
 
         # 執行率
         col5.metric("🎯 執行率", f"{overall_exec_rate:.1f}%")
