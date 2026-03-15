@@ -402,7 +402,7 @@ def build_title(info: dict, is_yt: bool) -> str:
 def main():
     parser = argparse.ArgumentParser(description="YouTube / Podcast → 筆記 → Notion")
     parser.add_argument("url", help="YouTube 或 Podcast 網址")
-    parser.add_argument("--lang", "-l", default=None, help="語言（YouTube 預設 en，Podcast 預設 zh）")
+    parser.add_argument("--lang", "-l", default=None, help="語言（自動偵測，可手動覆蓋）")
     parser.add_argument("--model", "-m", default="base", help="Whisper 模型 tiny/base/small/medium（預設 base）")
     parser.add_argument("--ai", default="gemini", choices=["claude", "gemini"], help="AI 模型（預設 gemini）")
     parser.add_argument("--tag", "-t", action="append", default=[], help="Notion Tags（可多次指定）")
@@ -414,20 +414,29 @@ def main():
     url = args.url
     is_yt = is_youtube(url)
 
-    # 預設語言：YouTube=en, Podcast=zh
-    lang = args.lang or ("en" if is_yt else "zh")
-
     # 1. 取得資訊
     source_label = "影片" if is_yt else "Podcast"
     print(f"正在取得{source_label}資訊...")
     info = get_media_info(url)
     title = info.get("title", "未知標題")
+
+    # 自動偵測語言：--lang 優先 → yt-dlp language 欄位 → 標題含中文則 zh → 預設 en
+    if args.lang:
+        lang = args.lang
+    elif info.get("language"):
+        lang = info["language"]
+    elif re.search(r"[\u4e00-\u9fff]", title):
+        lang = "zh"
+    else:
+        lang = "en"
+    lang_label = {"en": "英文", "zh": "中文"}.get(lang, lang)
     series = info.get("series", "")
     duration = info.get("duration_string", "")
 
     if series:
         print(f"節目：{series}")
     print(f"標題：{title}")
+    print(f"語言：{lang_label}（{lang}）")
     if duration:
         print(f"時長：{duration}")
 
