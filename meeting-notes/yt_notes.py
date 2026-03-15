@@ -241,11 +241,11 @@ def create_notion_page(
     # 將筆記轉為 Notion blocks
     blocks = markdown_to_notion_blocks(notes)
 
-    # 在最前面加入影片連結
+    # 在最前面嵌入影片
     link_block = {
         "object": "block",
-        "type": "bookmark",
-        "bookmark": {"url": video_url},
+        "type": "embed",
+        "embed": {"url": video_url},
     }
     blocks.insert(0, link_block)
 
