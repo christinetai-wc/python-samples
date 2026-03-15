@@ -27,11 +27,13 @@ python run.py export -s SESSION_ID
 # 轉錄影片檔案
 python transcribe_video.py <影片路徑> --model small --lang en
 
-# YouTube 字幕 → 筆記 → Notion
-python yt_notes.py "YouTube網址"
-python yt_notes.py "YouTube網址" -t 英文          # 指定 Tag
-python yt_notes.py "YouTube網址" --no-notion       # 只存本地
-python yt_notes.py "YouTube網址" --ai claude       # 用 Claude 整理
+# YouTube / Podcast → 筆記 → Notion（自動判斷來源）
+python notes.py "YouTube網址"                      # YouTube（字幕優先）
+python notes.py "Apple Podcasts網址" -t Podcast    # Podcast（Whisper 轉錄）
+python notes.py "網址" -t 英文                     # 指定 Tag
+python notes.py "網址" --no-notion                  # 只存本地
+python notes.py "網址" --ai claude                  # 用 Claude 整理
+python notes.py "網址" -m small                     # 用 small 模型轉錄
 ```
 
 ## 關鍵路徑與常數
@@ -56,7 +58,7 @@ meeting-notes/
 ├── cli.py                  # Click CLI（start/devices/config/list/export/summarize）
 ├── config.py               # 設定管理
 ├── transcribe_video.py     # 影片轉錄腳本（獨立）
-├── yt_notes.py             # YouTube 字幕 → Gemini/Claude 筆記 → Notion
+├── notes.py                # YouTube/Podcast → 筆記 → Notion（合併版）
 ├── audio/
 │   ├── capture.py          # 音訊擷取（sounddevice + BlackHole）
 │   ├── vad.py              # VAD 語音偵測 + SpeechSegmenter
@@ -81,7 +83,8 @@ meeting-notes/
 - 語音辨識用 `faster-whisper`（本地免費），不用 OpenAI API
 - 翻譯用 `deep-translator` 的 GoogleTranslator（免費）
 - 摘要用 Gemini API（需 `.env` 設定 `GEMINI_API_KEY`）
-- YouTube 筆記預設用 Gemini，可切換 Claude（需 `ANTHROPIC_API_KEY`）
+- `notes.py` 預設用 Gemini，可切換 Claude（需 `ANTHROPIC_API_KEY`）
+- `notes.py` 自動判斷 YouTube/Podcast，YouTube 預設 lang=en，Podcast 預設 lang=zh
 - Notion 上傳用 httpx 直接呼叫 REST API（同 sync-notion 模式）
 - 轉錄流程：音訊擷取 → VAD 分段 → Whisper 辨識 → text_cleanup 後處理 → 翻譯 → 摘要
 

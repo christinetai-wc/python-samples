@@ -2,22 +2,26 @@
 
 ## 2026-03-15
 
-### 新增 yt_notes.py — YouTube 字幕筆記工具
+### 新增 notes.py — YouTube / Podcast 筆記工具
 
-新增獨立腳本 `yt_notes.py`，一鍵完成：YouTube 字幕下載 → AI 整理筆記 → 上傳 Notion。
+合併 `yt_notes.py` + `podcast_notes.py` 為統一的 `notes.py`，自動判斷來源類型。
 
 #### 功能
-- 用 `yt-dlp` 下載字幕（優先手動字幕，fallback 自動產生）
-- 解析 VTT 字幕為乾淨文字（去重複、去 HTML 標籤）
+- YouTube：優先抓字幕，無字幕自動 fallback Whisper 轉錄
+- Podcast（Apple Podcasts 等）：下載音訊 → Whisper 轉錄
 - Gemini（預設）或 Claude 整理成結構化繁體中文筆記
-- 自動建立 Notion 頁面（含影片 bookmark、Tags、日期）
+- 自動建立 Notion 頁面（含嵌入連結、Tags、日期）
+- Podcast 標題含節目名、集數、日期
 - 上傳成功後自動刪除本地暫存檔
 
 #### 技術決策
+- 用 URL 網域判斷來源類型（youtube.com/youtu.be = YouTube，其餘 = Podcast）
+- YouTube 預設 lang=en，Podcast 預設 lang=zh
 - AI 預設用 Gemini（免費額度高），Claude API 需另外付費
 - Notion 用 httpx 直接呼叫 REST API，與 sync-notion 同模式
 - Markdown → Notion blocks 轉換：支援 heading、paragraph、list，自動切分超過 2000 字的 rich_text
 - Notion API 每次最多 100 blocks，超過自動分批追加
+- 長音訊分段轉錄（每段 30 分鐘），避免記憶體溢位
 
 #### 目標 Notion Database
 - 「課堂筆記」（Christine's Main Page 下）

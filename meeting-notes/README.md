@@ -220,9 +220,10 @@ python transcribe_video.py audio.mp3
 | `--cookies-from-browser chrome` | 使用 Chrome 的 cookie（私人影片用） |
 | `-o "名稱.%(ext)s"` | 指定輸出檔名 |
 
-## YouTube 字幕 → 筆記 → Notion
+## YouTube / Podcast → 筆記 → Notion
 
-使用 `yt_notes.py` 自動抓取 YouTube 字幕，用 AI 整理成繁體中文筆記，上傳到 Notion。
+使用 `notes.py` 自動從 YouTube 或 Podcast 產生繁體中文筆記，上傳到 Notion。
+自動判斷來源：YouTube 優先抓字幕（無字幕則 Whisper 轉錄），Podcast 直接 Whisper 轉錄。
 
 ### 前置需求
 
@@ -236,18 +237,21 @@ NOTION_YT_DATABASE_ID=xxx      # 目標 Database ID
 ### 使用方式
 
 ```bash
-# 基本用法（抓字幕 → Gemini 整理 → 上傳 Notion）
-python yt_notes.py "YouTube網址"
+# YouTube（自動抓字幕）
+python notes.py "YouTube網址"
 
-# 指定字幕語言
-python yt_notes.py "YouTube網址" --lang zh-Hant
+# Podcast（自動下載音訊 + Whisper 轉錄）
+python notes.py "Apple Podcasts網址" -t Podcast
+
+# 指定語言
+python notes.py "網址" --lang zh
 
 # 指定 Notion Tag
-python yt_notes.py "YouTube網址" -t 英文
+python notes.py "網址" -t 英文
 
 # 只產生本地筆記，不上傳
-python yt_notes.py "YouTube網址" --no-notion
+python notes.py "網址" --no-notion
 
-# 同時存本地 + 上傳
-python yt_notes.py "YouTube網址" --save-local
+# 用 small 模型提升轉錄準確度
+python notes.py "網址" -m small
 ```
