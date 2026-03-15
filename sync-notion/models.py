@@ -11,6 +11,7 @@ class DiffAction(Enum):
     SKIP = "skip"
     ADD = "add"
     UPDATE_TIME = "update"
+    UPDATE_TITLE = "update_title"
     GCAL_CANCELLED = "gcal_cancelled"
     FIXED_MISSING = "fixed_missing"
 
@@ -71,6 +72,7 @@ class DiffResult:
     skipped: list[DiffItem] = field(default_factory=list)
     to_add: list[DiffItem] = field(default_factory=list)
     time_changed: list[DiffItem] = field(default_factory=list)
+    title_changed: list[DiffItem] = field(default_factory=list)
     gcal_cancelled: list[DiffItem] = field(default_factory=list)
     fixed_missing: list[DiffItem] = field(default_factory=list)
 
@@ -78,6 +80,7 @@ class DiffResult:
         return not (
             self.to_add
             or self.time_changed
+            or self.title_changed
             or self.gcal_cancelled
             or self.fixed_missing
         )

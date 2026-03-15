@@ -75,6 +75,15 @@ def print_diff_report(diff: DiffResult, mode: str, msg: str = "") -> None:
                 console.print(f"  - {ev.task_name:<20s} {item.detail}")
         console.print()
 
+    # 📝 Title changed
+    if diff.title_changed:
+        console.print("[yellow]📝 編號/標題有變動（確認後更新）：[/yellow]")
+        for item in diff.title_changed:
+            ev = item.event
+            if ev:
+                console.print(f"  - {item.detail}")
+        console.print()
+
     # ❓ GCal cancelled
     if diff.gcal_cancelled:
         console.print("[red]❓ GCal 已無此課，請確認：[/red]")
@@ -106,7 +115,7 @@ def confirm_actions(diff: DiffResult) -> list[DiffItem] | None:
 
     Returns list of confirmed actions, or None to abort.
     """
-    actionable = diff.to_add + diff.time_changed + diff.fixed_missing
+    actionable = diff.to_add + diff.time_changed + diff.title_changed + diff.fixed_missing
     if not actionable:
         console.print("[dim]沒有需要執行的動作。[/dim]")
         return None

@@ -131,6 +131,21 @@ class NotionClient:
             )
             resp.raise_for_status()
 
+    async def update_page_title(self, page_id: str, new_title: str) -> None:
+        """Update the Title of an existing Notion page."""
+        body = {
+            "properties": {
+                "Task Name": {"title": [{"text": {"content": new_title}}]},
+            }
+        }
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.patch(
+                f"{NOTION_API}/pages/{page_id}",
+                headers=self.headers,
+                json=body,
+            )
+            resp.raise_for_status()
+
     async def execute_actions(self, actions: list[DiffItem]) -> list[str]:
         """Execute confirmed add/update actions. Returns list of descriptions."""
         results: list[str] = []
@@ -146,6 +161,11 @@ class NotionClient:
                     item.notion_record.page_id, item.event.start_time
                 )
                 results.append(f"更新 {item.event.task_name} 時間")
+            elif item.action.value == "update_title" and item.event and item.notion_record:
+                await self.update_page_title(
+                    item.notion_record.page_id, item.event.task_name
+                )
+                results.append(f"更新標題 {item.notion_record.task_name} → {item.event.task_name}")
         return results
 
     async def _query_database(self, body: dict) -> list[NotionRecord]:

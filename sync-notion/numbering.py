@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
-from config import GCAL_COURSES, FIXED_COURSES
+from config import GCAL_COURSES, FIXED_COURSES, TPE
 from models import CourseEvent, NotionRecord
 
 
@@ -30,6 +30,23 @@ def _find_max_number(prefix: str, records: list[NotionRecord]) -> int:
             max_n = max(max_n, int(m.group(1)))
     return max_n
 
+
+def _find_latest_number(prefix: str, records: list[NotionRecord]) -> int:
+    """Find the number (N) of the chronologically last record for this prefix."""
+    # Helper to sort safely
+    def _sort_key(r: NotionRecord):
+        dt = r.start_time
+        if dt and dt.tzinfo is None:
+            dt = dt.replace(tzinfo=TPE)
+        return dt or datetime.min.replace(tzinfo=TPE)
+
+    sorted_recs = sorted(records, key=_sort_key, reverse=True)
+    pattern = re.compile(rf"^{re.escape(prefix)}\s*\((\d+)\)$")
+    for rec in sorted_recs:
+        m = pattern.match(rec.task_name)
+        if m:
+            return int(m.group(1))
+    return 0
 
 def _find_matching_record(
     prefix: str, date: datetime, records: list[NotionRecord]
@@ -77,39 +94,51 @@ async def resolve_numbering(
             cfg.task_name_prefix
         )
 
-        max_n = _find_max_number(cfg.task_name_prefix, all_records)
+        # Sort events chronologically first to find the cutoff time
+        events_sorted = sorted(events, key=lambda e: e.start_time)
+        if not events_sorted:
+            continue
+
+        # Calculate max_n only from records strictly BEFORE the first event in this sync batch
+        cutoff_time = events_sorted[0].start_time
+
+        def _ensure_aware(dt: datetime) -> datetime:
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=TPE)
+            return dt
+
+        past_records = [r for r in all_records if r.start_time and _ensure_aware(r.start_time) < cutoff_time]
 
         # For courses that reset per period, compute the within-period number
-        if cfg.numbering_resets and cfg.period_size:
-            within_period = max_n % cfg.period_size
-            # If within_period == 0, we're at the end of a period
-            # Next number should be 1 (start of new period)
-            next_n = within_period + 1 if within_period < cfg.period_size else 1
+        if cfg.numbering_resets:
+            # Use the latest record's number (sequence), not the global max (value)
+            last_n = _find_latest_number(cfg.task_name_prefix, past_records)
+            if cfg.period_size:
+                next_n = last_n + 1 if last_n < cfg.period_size else 1
+            else:
+                next_n = last_n + 1
         else:
             # Continuous numbering
+            max_n = _find_max_number(cfg.task_name_prefix, past_records)
             next_n = max_n + 1
-
-        # Sort events chronologically
-        events_sorted = sorted(events, key=lambda e: e.start_time)
 
         for ev in events_sorted:
             # Check if this event already exists in Notion
-            existing = _find_matching_record(
-                ev.task_name_prefix, ev.start_time, all_records
-            )
-            if existing:
-                ev.task_name = existing.task_name
-            else:
-                ev.task_name = f"{ev.task_name_prefix} ({next_n})"
-                if cfg.numbering_resets and cfg.period_size:
-                    next_n = next_n + 1 if next_n < cfg.period_size else 1
-                else:
-                    next_n += 1
+            # We verify existence later in differ, but here we enforce the correct sequence name
+            ev.task_name = f"{ev.task_name_prefix} ({next_n})"
 
-                # Update description with period info if applicable
-                if cfg.period_size and cfg.numbering_resets and cfg.description_template:
+            if cfg.numbering_resets and cfg.period_size:
+                next_n = next_n + 1 if next_n < cfg.period_size else 1
+            else:
+                next_n += 1
+
+            # Update description with period info if applicable
+            if cfg.period_size and cfg.numbering_resets and cfg.description_template:
                     # Calculate which period we're in
-                    total_count = max_n + (
+                    # Note: This is an approximation. Ideally we count total records.
+                    # Use len(past_records) assuming they are all valid classes of this type
+                    current_total = len(past_records)
+                    total_count = current_total + (
                         events_sorted.index(ev)
                         - sum(
                             1

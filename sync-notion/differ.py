@@ -28,6 +28,7 @@ def compute_diff(
         result.skipped,
         result.to_add,
         result.time_changed,
+        result.title_changed,
         result.gcal_cancelled,
         result.fixed_missing,
     ]:
@@ -52,11 +53,11 @@ def _diff_gcal(
 
         if match:
             matched_notion_ids.add(match.page_id)
-            if _same_start_time(ev.start_time, match.start_time):
-                result.skipped.append(
-                    DiffItem(action=DiffAction.SKIP, event=ev, notion_record=match)
-                )
-            else:
+            
+            time_diff = not _same_start_time(ev.start_time, match.start_time)
+            title_diff = ev.task_name != match.task_name
+
+            if time_diff:
                 result.time_changed.append(
                     DiffItem(
                         action=DiffAction.UPDATE_TIME,
@@ -67,6 +68,21 @@ def _diff_gcal(
                             f"→ GCal: {_fmt_time(ev.start_time)}"
                         ),
                     )
+                )
+            
+            if title_diff:
+                result.title_changed.append(
+                    DiffItem(
+                        action=DiffAction.UPDATE_TITLE,
+                        event=ev,
+                        notion_record=match,
+                        detail=f"Notion: {match.task_name} → {ev.task_name}",
+                    )
+                )
+
+            if not time_diff and not title_diff:
+                result.skipped.append(
+                    DiffItem(action=DiffAction.SKIP, event=ev, notion_record=match)
                 )
         else:
             result.to_add.append(
@@ -112,9 +128,19 @@ def _diff_fixed(
         ev_date = ev.start_time.date()
         match = _find_notion_match(ev.task_name_prefix, ev_date, records)
         if match:
-            result.skipped.append(
-                DiffItem(action=DiffAction.SKIP, event=ev, notion_record=match)
-            )
+            if ev.task_name != match.task_name:
+                result.title_changed.append(
+                    DiffItem(
+                        action=DiffAction.UPDATE_TITLE,
+                        event=ev,
+                        notion_record=match,
+                        detail=f"Notion: {match.task_name} → {ev.task_name}",
+                    )
+                )
+            else:
+                result.skipped.append(
+                    DiffItem(action=DiffAction.SKIP, event=ev, notion_record=match)
+                )
         else:
             result.fixed_missing.append(
                 DiffItem(action=DiffAction.FIXED_MISSING, event=ev, notion_record=None)
